@@ -220,6 +220,11 @@ public:
 
     // writes data collected the variance monitor to ~/naoqi/log/
     void writeVarianceData();
+    // checks whether the sensors we're monitoring are "healthy" or not
+    float percentBrokenFSR();
+    float percentBrokenMotionSensors();
+    bool angleXYBroken();
+    float percentBrokenSonar();
 
     BallMonitor& BallVariance() {
         BallMonitor& ref = ballVariance;

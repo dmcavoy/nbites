@@ -81,6 +81,7 @@ def claimBall(player):
         kick = player.brain.kickDecider.getCenterKickPosition()
         player.brain.tracker.trackBall()
         player.brain.nav.kickPosition(kick)
+        player.inKickingState = True
 
     if transitions.shouldKick(player):
         return player.goNow('decideKick')
@@ -158,7 +159,8 @@ def kickOff(player):
     """
     Perform special behavior when we are kicking off
     """
-    player.brain.kickDecider.setKickOff()
+    if player.firstFrame():
+        player.brain.kickDecider.setKickOff()
 
     if transitions.shouldPositionForKick(player):
         return player.goNow('positionForKick')
