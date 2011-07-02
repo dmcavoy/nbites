@@ -2,11 +2,12 @@
 #include <string>
 
 
-static const int NUM_MONITORS = 7;
+static const int NUM_MONITORS = 9;
 
 // names of different sensors (for variance monitoring)
 const std::string sensorNames[NUM_MONITORS] = {
-    "ballX", "ballY", "ballDist", "ekfX", "ekfY", "velX", "velY"
+    "ballX", "ballY", "ballDist", "relX", "relY",
+    "relVelX", "relVelY","relAccX","relAccY"
 };
 
 
@@ -34,13 +35,17 @@ void BallMonitor::update(float x, float y, float dist)
     monitor.update(++i, dist);
 }
 
-void BallMonitor::update(float x, float y, float velx, float vely)
+void BallMonitor::update(float relX, float relY,
+                         float relVelX, float relVelY,
+                         float relAccX, float relAccY)
 {
     int i = 3; // see above
-    monitor.update(i, x);
-    monitor.update(++i, y);
-    monitor.update(++i, velx);
-    monitor.update(++i, vely);
+    monitor.update(i, relX);
+    monitor.update(++i, relY);
+    monitor.update(++i, relVelX);
+    monitor.update(++i, relVelY);
+    monitor.update(++i, relAccX);
+    monitor.update(++i, relAccY);
 
 }
 

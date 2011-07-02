@@ -10,7 +10,9 @@ public:
     BallMonitor();
 
     void update(float x, float y, float dist);
-    void update(float x, float y, float velx, float vely);
+    void update(float relX, float relY,
+                float relVelX, float relVelY,
+                float relAccX, float relAccY);
 
     void Reset();
     void LogOutput();

@@ -40,17 +40,6 @@ BulkMonitor::BulkMonitor(int _numberMonitors, std:: string _bulkName,
         monitors[i].SensorName(sensorNames[i]);
 }
 
-BulkMonitor::BulkMonitor(int _numberMonitors, std::string _bulkName,
-                         const std::string sensorNames[])
-    : numberMonitors(_numberMonitors),
-      bulkName(_bulkName)
-{
-    monitors = new SensorMonitor[numberMonitors];
-    for (int i = 0; i < numberMonitors; ++i) {
-        monitors[i].SensorName(sensorNames[i]);
-    }
-}
-
 BulkMonitor::~BulkMonitor() {
     delete [] monitors;
 }

@@ -276,9 +276,12 @@ void Noggin::runStep ()
 #   endif //RUN_LOCALIZATION
 
     if (vision->ball->isOn()){
-        sensors->BallVariance().update(ballEKF->getXEst(), ballEKF->getYEst(),
-                                       ballEKF->getXVelocityEst(),
-                                       ballEKF->getYVelocityEst());
+        sensors->BallVariance().update(ballEKF->getRelativeX(),
+                                       ballEKF->getRelativeY(),
+                                       ballEKF->getRelativeXVelocity(),
+                                       ballEKF->getRelativeYVelocity(),
+                                       ballEKF->getRelativeXAcceleration(),
+                                       ballEKF->getRelativeYAcceleration());
     }
 
 
