@@ -39,7 +39,9 @@ class HeadTracking(FSA.FSA):
 
     def stopHeadMoves(self):
         """stop all head moves. In TrackingStates.py"""
-        self.switchTo('stop')
+        if self.currentState is not 'stopped' and \
+                self.currentState is not 'stop':
+            self.switchTo('stop')
 
     def isStopped(self):
         """Checks that all head moves have stopped"""
@@ -102,6 +104,7 @@ class HeadTracking(FSA.FSA):
 
     def kickDecideScan(self):
         self.lastDiffState = 'stop'
+        self.goalieActiveLoc = False
         if self.currentState != 'trianglePan':
             self.switchTo('trianglePan')
 

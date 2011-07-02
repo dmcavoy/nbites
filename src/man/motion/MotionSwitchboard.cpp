@@ -20,16 +20,14 @@ const float MotionSwitchboard::sitDownAngles[NUM_BODY_JOINTS] =
 
 
 MotionSwitchboard::MotionSwitchboard(shared_ptr<Sensors> s,
-                                     shared_ptr<Profiler> p,
                                      shared_ptr<NaoPose> pose)
     : sensors(s),
-      profiler(p),
-      walkProvider(sensors, pose, p),
-      scriptedProvider(sensors, p),
-      headProvider(sensors, p),
-      coordHeadProvider(sensors, p, pose),
-      nullHeadProvider(sensors, p),
-      nullBodyProvider(sensors, p),
+      walkProvider(sensors, pose),
+      scriptedProvider(sensors),
+      headProvider(sensors),
+      coordHeadProvider(sensors, pose),
+      nullHeadProvider(sensors),
+      nullBodyProvider(sensors),
       curProvider(&nullBodyProvider),
       nextProvider(&nullBodyProvider),
       curHeadProvider(&nullHeadProvider),
@@ -39,6 +37,7 @@ MotionSwitchboard::MotionSwitchboard(shared_ptr<Sensors> s,
       nextStiffnesses(vector<float>(NUM_JOINTS,0.0f)),
       lastJoints(sensorAngles),
       running(false),
+      shouldWalkPose(false),
       newJoints(false),
       readyToSend(false),
       noWalkTransitionCommand(true)
@@ -125,14 +124,34 @@ void MotionSwitchboard::run() {
     pthread_mutex_unlock(&calc_new_joints_mutex);
 
     while(running) {
-        PROF_ENTER(profiler, P_SWITCHBOARD);
+        PROF_ENTER(P_SWITCHBOARD);
         realityCheckJoints();
+
+        /**
+         * This is a big fat hack. Running this code from the vision
+         * thread, and accessing the walkProvider causes awful
+         * deadlocks. So, here is my best attempt at getting around
+         * this. Sorry I'm not sorry. --Jack
+         */
+        if (shouldWalkPose){
+            vector<BodyJointCommand::ptr> gaitSwitches =
+                walkProvider.getGaitTransitionCommand();
+
+            if(gaitSwitches.size() >= 1){
+                vector<BodyJointCommand::ptr>::iterator i;
+                for(i = gaitSwitches.begin(); i != gaitSwitches.end(); i++){
+                    sendMotionCommand(*i);
+                }
+            }
+            shouldWalkPose = false;
+        }
+
 
         preProcess();
         processJoints();
         processStiffness();
         bool active  = postProcess();
-        PROF_EXIT(profiler, P_SWITCHBOARD);
+
 
         if(active)
         {
@@ -146,6 +165,7 @@ void MotionSwitchboard::run() {
         pthread_cond_wait(&calc_new_joints_cond, &calc_new_joints_mutex);
         pthread_mutex_unlock(&calc_new_joints_mutex);
         frameCount++;
+        PROF_EXIT(P_SWITCHBOARD);
     }
     cout << "Switchboard run has exited" <<endl;
 }
@@ -173,53 +193,52 @@ void MotionSwitchboard::processJoints()
  * too much too it:
  */
 void MotionSwitchboard::processStiffness(){
-    try{
-        if(curHeadProvider->isActive()){
-            const vector <float > headStiffnesses =
-                curHeadProvider->getChainStiffnesses(HEAD_CHAIN);
+    pthread_mutex_lock(&stiffness_mutex);
 
-            pthread_mutex_lock(&stiffness_mutex);
+    if(curHeadProvider->isActive()){
+        const vector <float > headStiffnesses =
+            curHeadProvider->getChainStiffnesses(HEAD_CHAIN);
 
-            for(unsigned int i = 0; i < HEAD_JOINTS; i ++){
-                nextStiffnesses[HEAD_YAW + i] = headStiffnesses.at(i);
-            }
-
-            pthread_mutex_unlock(&stiffness_mutex);
-        }
-
-        if(curProvider->isActive()){
-            const vector <float > llegStiffnesses =
-                curProvider->getChainStiffnesses(LLEG_CHAIN);
-
-            const vector <float > rlegStiffnesses =
-                curProvider->getChainStiffnesses(RLEG_CHAIN);
-
-            const vector <float > rarmStiffnesses =
-                curProvider->getChainStiffnesses(RARM_CHAIN);
-
-            const vector <float > larmStiffnesses =
-                curProvider->getChainStiffnesses(LARM_CHAIN);
-
-            pthread_mutex_lock(&stiffness_mutex);
-
-            for(unsigned int i = 0; i < LEG_JOINTS; i ++){
-                nextStiffnesses[L_HIP_YAW_PITCH + i] = llegStiffnesses.at(i);
-                nextStiffnesses[R_HIP_YAW_PITCH + i] = rlegStiffnesses.at(i);
-            }
-
-            for(unsigned int i = 0; i < ARM_JOINTS; i ++){
-                nextStiffnesses[L_SHOULDER_PITCH + i] = larmStiffnesses.at(i);
-                nextStiffnesses[R_SHOULDER_PITCH + i] = rarmStiffnesses.at(i);
-            }
-
-            pthread_mutex_unlock(&stiffness_mutex);
+        for(unsigned int i = 0; i < HEAD_JOINTS; i ++){
+            nextStiffnesses[HEAD_YAW + i] = headStiffnesses.at(i);
         }
     }
 
-    catch(std::out_of_range & e){
-        cout << "Out of range exception caught in processStiffness"<< e.what()<<endl;
-        exit(0);
+    if(curProvider->isActive()){
+        const vector <float > llegStiffnesses =
+            curProvider->getChainStiffnesses(LLEG_CHAIN);
+
+        const vector <float > rlegStiffnesses =
+            curProvider->getChainStiffnesses(RLEG_CHAIN);
+
+        const vector <float > rarmStiffnesses =
+            curProvider->getChainStiffnesses(RARM_CHAIN);
+
+        const vector <float > larmStiffnesses =
+            curProvider->getChainStiffnesses(LARM_CHAIN);
+
+        for(unsigned int i = 0; i < LEG_JOINTS; i ++){
+            nextStiffnesses[L_HIP_YAW_PITCH + i] = llegStiffnesses.at(i);
+            nextStiffnesses[R_HIP_YAW_PITCH + i] = rlegStiffnesses.at(i);
+        }
+
+        for(unsigned int i = 0; i < ARM_JOINTS; i ++){
+            nextStiffnesses[L_SHOULDER_PITCH + i] = larmStiffnesses.at(i);
+            nextStiffnesses[R_SHOULDER_PITCH + i] = rarmStiffnesses.at(i);
+        }
     }
+
+    vector<float>::iterator i = nextStiffnesses.begin();
+    for (; i != nextStiffnesses.end(); ++i) {
+        if (*i < MotionConstants::MIN_STIFFNESS){
+            *i = MotionConstants::NO_STIFFNESS;
+        } else {
+            *i = NBMath::clip(*i,
+                              MotionConstants::MIN_STIFFNESS,
+                              MotionConstants::MAX_STIFFNESS);
+        }
+    }
+    pthread_mutex_unlock(&stiffness_mutex);
 }
 
 
@@ -550,6 +569,7 @@ const vector <float> MotionSwitchboard::getNextJoints() const {
 }
 
 const vector<float>  MotionSwitchboard::getNextStiffness() const{
+
     pthread_mutex_lock(&stiffness_mutex);
     vector<float> result(nextStiffnesses);
     pthread_mutex_unlock(&stiffness_mutex);
@@ -797,3 +817,10 @@ void MotionSwitchboard::sendMotionCommand(const DestinationCommand::ptr command)
     pthread_mutex_unlock(&next_provider_mutex);
 }
 
+/**
+ * Send a scripted command which moves the robot to the Walk position
+ */
+void MotionSwitchboard::walkPose()
+{
+    shouldWalkPose = true;
+}

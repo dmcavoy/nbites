@@ -1,6 +1,6 @@
-from .Location import (RobotLocation, Location)
-from .. import NogginConstants
+from objects import (RobotLocation, Location)
 from math import fabs
+import noggin_constants as NogginConstants
 import time
 
 OPP_GOAL = Location(NogginConstants.OPP_GOALBOX_LEFT_X,
@@ -17,20 +17,21 @@ DEFAULT_CHASER_NUMBER = 4
 DEBUG_DETERMINE_CHASE_TIME = False
 SEC_TO_MILLIS = 1000.0
 CHASE_SPEED = 15.00 #cm/sec
+CHASE_TIME_SCALE = 0.45              # How much new measurement is used.
 BALL_OFF_PENALTY = 1000.             # Big penalty for not seeing the ball.
 BALL_GOAL_LINE_PENALTY = 10.
-# penalty is: (ball_dist*heading)/scale
-PLAYER_HEADING_PENALTY_SCALE = 300.0 # max 60% of distance
-# penalty is: (ball_dist*ball_bearing)/scale
-BALL_BEARING_PENALTY_SCALE = 200.0 # max 90% of distance
 
+# Behavior constants
+BALL_TEAMMATE_DIST_GRABBING = 35
+BALL_TEAMMATE_BEARING_GRABBING = 85.
+BALL_TEAMMATE_DIST_DRIBBLING = 20
 
 class TeamMember(RobotLocation):
     """class for keeping track of teammates' info """
 
     def __init__(self, tbrain=None):
         '''variables include lots from the Packet class'''
-        RobotLocation.__init__(self)
+        RobotLocation.__init__(self, 0.0, 0.0, 0.0)
         # things in the Packet()
         self.playerNumber = 0
         self.ballDist = 0
@@ -73,14 +74,14 @@ class TeamMember(RobotLocation):
         # if we are recieving packets, teammate is active
         self.active = True
         self.grabbing = (self.ballDist <=
-                         NogginConstants.BALL_TEAMMATE_DIST_GRABBING) and \
+                         BALL_TEAMMATE_DIST_GRABBING) and \
                          (fabs(self.ballBearing) <
-                          NogginConstants.BALL_TEAMMATE_BEARING_GRABBING)
+                          BALL_TEAMMATE_BEARING_GRABBING)
 
         #potential problem when goalie is grabbing?
         #only going to be dribbling or grabbing if you see the ball
         self.dribbling = self.ballDist <= \
-                          NogginConstants.BALL_TEAMMATE_DIST_DRIBBLING
+                          BALL_TEAMMATE_DIST_DRIBBLING
 
         self.lastPacketTime = time.time()
 
@@ -109,12 +110,12 @@ class TeamMember(RobotLocation):
                        'gamePenalized')
 
         self.dribbling = self.ballDist <= \
-                         NogginConstants.BALL_TEAMMATE_DIST_DRIBBLING
+                         BALL_TEAMMATE_DIST_DRIBBLING
 
         self.grabbing = (self.ballDist <=
-                         NogginConstants.BALL_TEAMMATE_DIST_GRABBING) and \
+                         BALL_TEAMMATE_DIST_GRABBING) and \
                          (fabs(self.ballBearing) <
-                          NogginConstants.BALL_TEAMMATE_BEARING_GRABBING)
+                          BALL_TEAMMATE_BEARING_GRABBING)
 
         self.lastPacketTime = time.time()
 
@@ -153,8 +154,8 @@ class TeamMember(RobotLocation):
         if DEBUG_DETERMINE_CHASE_TIME:
             self.brain.out.printf("\tChase time base is " + str(t))
 
-        # Give a penalty for not seeing the ball
-        if not self.brain.ball.on:
+        # Give a penalty for not seeing the ball if we aren't in a kickingState
+        if not self.brain.ball.vis.on and not self.brain.player.inKickingState:
             t += BALL_OFF_PENALTY
 
         if DEBUG_DETERMINE_CHASE_TIME:
@@ -172,16 +173,24 @@ class TeamMember(RobotLocation):
             t += BALL_GOAL_LINE_PENALTY
 
         if DEBUG_DETERMINE_CHASE_TIME:
-            self.brain.out.printf("\tChase time after ball-goal-line bonus " +str(t))
+            self.brain.out.printf("\tChase time after ball-goal-line penalty "+str(t))
 
         # Add a penalty for being fallen over
         t += self.brain.fallController.getTimeRemainingEst()
 
         if DEBUG_DETERMINE_CHASE_TIME:
             self.brain.out.printf("\tChase time after fallen over penalty " + str(t))
+
+        tm = t*SEC_TO_MILLIS
+
+        # Filter by IIR to reduce noise
+        tm = tm * CHASE_TIME_SCALE + (1.0 -CHASE_TIME_SCALE) * self.chaseTime
+
+        if DEBUG_DETERMINE_CHASE_TIME:
+            self.brain.out.printf("\tChase time after filter " +str(tm))
             self.brain.out.printf("")
 
-        return t*SEC_TO_MILLIS
+        return tm
 
     def hasBall(self):
         return self.grabbing

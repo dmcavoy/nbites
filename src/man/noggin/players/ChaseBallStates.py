@@ -86,8 +86,10 @@ def claimBall(player):
     if transitions.shouldKick(player):
         return player.goNow('decideKick')
     elif transitions.shouldFindBall(player):
+        player.inKickingState = False
         return player.goLater('findBall')
     elif transitions.shouldChaseFromClaimBall(player):
+        player.inKickingState = False
         return player.goNow('chase')
 
     return player.stay()
@@ -106,6 +108,7 @@ def spinToBall(player):
     if transitions.shouldFindBall(player):
         return player.goLater('findBall')
     elif transitions.shouldChaseFromSpinToBall(player):
+        player.brain.nav.chaseBall()
         return player.goNow('chase')
 
     return player.stay()
@@ -119,6 +122,7 @@ def decideKick(player):
         # Re-initialize to clear data from decideKick
         player.brain.kickDecider.resetInfo()
         player.brain.tracker.kickDecideScan()
+        player.inKickingState = True
 
     #TODO change this to be better.
     elif player.counter > 43: #time required for scan
@@ -136,7 +140,7 @@ def positionForKick(player):
         kick = player.brain.kickDecider.getKick()
 
         if kick is None:
-            player.angleToOrbit = player.brain.kickDecider.kickInfo.orbitAngle
+            player.angleToOrbit = player.brain.kickDecider.info.orbitAngle
             return player.goLater('orbitBall')
 
         player.inKickingState = True

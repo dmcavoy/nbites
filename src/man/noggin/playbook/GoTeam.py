@@ -2,7 +2,7 @@ from math import (fabs, hypot, atan2, cos, sin, acos, asin)
 from ..util import MyMath
 from . import PBConstants
 from . import Strategies
-from .. import NogginConstants
+import noggin_constants as NogginConstants
 import time
 
 # ANSI terminal color codes
@@ -34,17 +34,23 @@ class GoTeam:
         self.kickoffFormation = 0
         self.timeSinceCaptureChase = 0
         self.subRoleSwitchTime = 0
+        self.goalieChaserCount = 0
+        self.willBeIllegalD = 0
+        self.stopAvoidingBox = 0
         self.ellipse = Ellipse(PBConstants.LARGE_ELLIPSE_CENTER_X,
                                PBConstants.LARGE_ELLIPSE_CENTER_Y,
                                PBConstants.LARGE_ELLIPSE_HEIGHT,
                                PBConstants.LARGE_ELLIPSE_WIDTH)
 
+
+        # Goalie
         self.shouldPositionLeftCounter = 0
         self.shouldPositionRightCounter = 0
         self.shouldPositionCenterCounter = 0
         self.shouldSaveCounter = 0
         self.shouldChaseCounter = 0
         self.shouldStopChaseCounter = 0
+        self.shouldStopSaveCounter = 0
 
     def run(self, play):
         """We run this each frame to get the latest info"""
@@ -112,7 +118,7 @@ class GoTeam:
         """
         Update information specific to the coordinated behaviors
         """
-        # Print changes
+        # Print changes and Say changes
         if play.changed:
             self.brain.speech.say(PBConstants.SUB_ROLES[play.subRole])
             if self.printStateChanges:
@@ -292,7 +298,9 @@ class GoTeam:
                     min_dist = d[0]
                     chosenPositions = d
 
-            # chosen Postitions is an array of size 4 where 1,2,3 are the positions
+            # chosen Postitions is an array of size 4
+            #where 1,2,3 are the positions
+
             # returns a Location
             return chosenPositions[self.me.playerNumber -1]
 
@@ -303,7 +311,9 @@ class GoTeam:
     ######################################################
 
     def aPrioriTeammateUpdate(self):
-        """Here we update information about teammates before running a new frame"""
+        """Here we update information about teammates
+        before running a new frame"""
+
         # update my own information for role switching
         self.time = time.time()
         self.me.updateMe()
@@ -313,7 +323,11 @@ class GoTeam:
         append = self.activeFieldPlayers.append
 
         self.numActiveFieldPlayers = 0
-        for mate in self.brain.teamMembers: ## @TODO!!!! figure out what happened here. We thought we were with another bot when it was in penalty.
+
+        for mate in self.brain.teamMembers:## @TODO!!!! figure out
+            #what happened here. We thought we were with another bot
+            #when it was in penalty.
+
             # don't check inactive mates or the goalie.
             if (mate.active and not mate.isTeammateRole(PBConstants.GOALIE)):
                 append(mate)
@@ -328,7 +342,9 @@ class GoTeam:
         return highNumber
 
     def getOtherActiveFieldPlayers(self, exceptNumbers):
-        """returns the active teammates who don't have a number in exceptNumbers"""
+        """returns the active teammates who don't have
+        a number in exceptNumbers"""
+
         mates = []
         append = mates.append
         for mate in self.activeFieldPlayers:
@@ -369,6 +385,7 @@ class GoTeam:
     ############   Strategy Decision Stuff     ###########
     ######################################################
 
+    # Not used - 7/1/11
     def noCalledChaser(self):
         """Returns true if no one is chasing and they are not searching"""
         # If everyone else is out, let's not go for the ball
@@ -394,11 +411,37 @@ class GoTeam:
             return False
 
     def shouldUseDubD(self):
+        """
+        Uses goalieChaserCount to buffer when we let the goalie call us off.
+        If the ball is in our box goalie should be chaser.
+        """
+
+        ball = self.brain.ball
+
+        # No matter what state we are we don't
+        # Want to become an illegal defender
+        # TODO: When ball information is better make this inMyGoalBox
+        if ball.x < (NogginConstants.MY_GOALBOX_RIGHT_X + 10):
+            self.willBeIllegalD += 1
+            if self.willBeIllegalD > PBConstants.DONT_ILLEGAL_D_THRESH:
+                self.brain.player.inKickingState = False
+                self.stopAvoidingBox = 0
+                return True
+        elif ball.vis.on:
+            self.stopAvoidingBox += 1
+            if self.stopAvoidingBox > PBConstants.STOP_AVOID_BOX_THRESH:
+                self.willBeIllegalD = 0
+
         if not PBConstants.USE_DUB_D:
             return False
         goalie = self.brain.teamMembers[0]
-        return (goalie.isTeammateSubRole(PBConstants.GOALIE_CHASER) and
-                not self.brain.player.inKickingState)
+        if goalie.isTeammateSubRole(PBConstants.GOALIE_CHASER):
+            self.goalieChaserCount += 1
+        else:
+            self.goalieChaserCount = 0
+            return False
+        if self.goalieChaserCount > PBConstants.GOALIE_CHASER_COUNT_THRESH:
+            return not self.brain.player.inKickingState
 
     def defenderShouldChase(self):
         ballX = self.brain.ball.relX
@@ -502,6 +545,19 @@ class GoTeam:
                                       RESET_COLORS_CODE)
         else:
             self.brain.out.printf(str(outputString))
+
+
+    # Reset counters for role transitions
+    def resetGoalieRoleCounters(self):
+
+        self.shouldStopChaseCounter = 0
+        self.shouldChaseCounter = 0
+        self.shouldPositionRightCounter = 0
+        self.shouldPositionLeftCounter = 0
+        self.shouldPositionCenterCounter = 0
+        self.shouldSaveCounter = 0
+        self.shouldStopSaveCounter = 0
+
 
 class Ellipse:
   """

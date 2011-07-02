@@ -1,8 +1,8 @@
 """
 File to hold all of the cross field constants for the cooperative behavior system
 """
-from .. import NogginConstants
-from ..typeDefs.Location import Location
+import noggin_constants as NogginConstants
+from objects import Location
 from math import pi
 
 # Test switches to force one role to always be given out
@@ -24,8 +24,7 @@ DEFAULT_DEFENDER_NUMBER = 2
 DEFAULT_OFFENDER_NUMBER = 3
 DEFAULT_CHASER_NUMBER = 4
 
-# Length of time to spend in the kickoff play
-KICKOFF_FORMATION_TIME = 10
+KICKOFF_FORMATION_TIME = 10 # Length of time to spend in the kickoff play
 
 NUM_TEAM_PLAYERS = NogginConstants.NUM_PLAYERS_PER_TEAM
 
@@ -33,9 +32,14 @@ NUM_TEAM_PLAYERS = NogginConstants.NUM_PLAYERS_PER_TEAM
 #### Role Switching / Tie Breaking ####
 ####
 # The following constants are in milliseconds
-CALL_OFF_THRESH = 1250.             # how likely it is to be chaser
-LISTEN_THRESH = 2500.               # how likely it is to stop being chaser
-STOP_CALLING_THRESH = 2750.         # how likely you are to ignore teammates ideas.
+CALL_OFF_THRESH = 1500.             # how likely it is to be chaser
+LISTEN_THRESH = 3000.               # how likely it is to stop being chaser
+STOP_CALLING_THRESH = 3500.         # how likely you are to ignore teammates ideas.
+
+GOALIE_CHASER_COUNT_THRESH = 25      # how long we wait before goalie calls us off.
+
+DONT_ILLEGAL_D_THRESH = 4  # Amount to wait before stopping from chasing
+STOP_AVOID_BOX_THRESH = 5 # Amount to wait before going back to chasing
 
 # Special cases for waiting for the ball at half field
 NEAR_LINE_THRESH = 25.
@@ -182,7 +186,7 @@ ROLES = dict(zip(range(NUM_ROLES), ("INIT_ROLE",
 
 SUB_ROLE_SWITCH_BUFFER = 10.
 # dictionary of subRoles
-NUM_SUB_ROLES = 29
+NUM_SUB_ROLES = 27
 SUB_ROLES = dict(zip(range(NUM_SUB_ROLES), ("INIT_SUB_ROLE",
                                             "PENALTY_SUB_ROLE",
 
@@ -209,19 +213,17 @@ SUB_ROLES = dict(zip(range(NUM_SUB_ROLES), ("INIT_SUB_ROLE",
                                             # CHASER SUB ROLES 16
                                             "CHASE_NORMAL",
 
-                                            # GOALIE SUB ROLE 17-22
+                                            # GOALIE SUB ROLE 17-20
                                             "GOALIE_CENTER",
-                                            "GOALIE_RIGHT",
-                                            "GOALIE_LEFT",
                                             "GOALIE_SAVE",
                                             "GOALIE_CHASER",
-                                            "GOALIE_PENALTY_SAVER",
+                                            "GOALIE_KICKOFF",
 
-                                            # KICKOFF SUB ROLES 23-24
+                                            # KICKOFF SUB ROLES 21-22
                                             "KICKOFF_SWEEPER",
                                             "KICKOFF_STRIKER",
 
-                                            # READY SUB ROLES 25-28
+                                            # READY SUB ROLES 23-26
                                             "READY_GOALIE",
                                             "READY_CHASER",
                                             "READY_DEFENDER",
@@ -250,11 +252,9 @@ SUB_ROLES = dict(zip(range(NUM_SUB_ROLES), ("INIT_SUB_ROLE",
  CHASE_NORMAL,
 
  GOALIE_CENTER,
- GOALIE_RIGHT,
- GOALIE_LEFT,
  GOALIE_SAVE,
  GOALIE_CHASER,
- GOALIE_PENALTY_SAVER,
+ GOALIE_KICKOFF,
 
  KICKOFF_SWEEPER,
  KICKOFF_STRIKER,
@@ -290,13 +290,13 @@ CENTER_FIELD = Location(NogginConstants.CENTER_FIELD_X,
                         NogginConstants.CENTER_FIELD_Y)
 """DEFENDER"""
 READY_KICKOFF_DEFENDER_X = (NogginConstants.CENTER_FIELD_X -
-                            NogginConstants.GREEN_PAD_X) * 0.3
+                            NogginConstants.GREEN_PAD_X) * 0.3 + 15
 READY_KICKOFF_DEFENDER_0_Y = NogginConstants.LANDMARK_MY_GOAL_RIGHT_POST_Y
 READY_KICKOFF_DEFENDER_1_Y = NogginConstants.LANDMARK_MY_GOAL_LEFT_POST_Y
 """OFFENDER"""
 READY_KICKOFF_OFFENDER_X = (NogginConstants.CENTER_FIELD_X -
                             NogginConstants.CENTER_CIRCLE_RADIUS * 0.5)
-READY_KICKOFF_OFFENDER_OFFSET = 150. # Can be as large as you want as long as robot can side-kick that distance
+READY_KICKOFF_OFFENDER_OFFSET = 165. # Can be as large as you want as long as robot can side-kick that distance
 READY_KICKOFF_OFFENDER_0_Y = (NogginConstants.CENTER_FIELD_Y +
                               READY_KICKOFF_OFFENDER_OFFSET)
 READY_KICKOFF_OFFENDER_1_Y = (NogginConstants.CENTER_FIELD_Y -
@@ -305,7 +305,7 @@ READY_KICKOFF_OFFENDER_1_Y = (NogginConstants.CENTER_FIELD_Y -
 # Use offset to leave room for chaser's feet/ room to position on the kick.
 READY_KICKOFF_CHASER_OFFSET = NogginConstants.CENTER_CIRCLE_RADIUS * 0.5
 READY_KICKOFF_CHASER_X = NogginConstants.CENTER_FIELD_X - READY_KICKOFF_CHASER_OFFSET
-READY_KICKOFF_CHASER_Y = NogginConstants.CENTER_FIELD_Y # near center
+READY_KICKOFF_CHASER_Y = NogginConstants.CENTER_FIELD_Y - 15 # near center
 
 # READY_NON_KICKOFF
 # ____________________
@@ -381,12 +381,8 @@ DEG_TO_RAD = pi / 180.
 BALL_FOCUS_UNCERT_THRESH = 100.
 
 #Home positioning
-GOALIE_HOME_X = NogginConstants.MY_GOALBOX_LEFT_X + 20 #LARGE_ELLIPSE_HEIGHT??
+GOALIE_HOME_X = NogginConstants.MY_GOALBOX_LEFT_X + 30 #LARGE_ELLIPSE_HEIGHT??
 GOALIE_HOME_Y = NogginConstants.CENTER_FIELD_Y
-GOALIE_RIGHT_X = NogginConstants.MY_GOALBOX_LEFT_X + 20
-GOALIE_RIGHT_Y = NogginConstants.LANDMARK_MY_GOAL_RIGHT_POST_Y + 10
-GOALIE_LEFT_X = NogginConstants.MY_GOALBOX_LEFT_X + 20
-GOALIE_LEFT_Y = NogginConstants.LANDMARK_MY_GOAL_LEFT_POST_Y - 10
 
 ### Defender
 """
@@ -402,8 +398,8 @@ A Stopper will move back and forth on a line behind the center circle,
             far toward the edge of the field.
 """
 DEFENDER_BALL_DIST = 100
-SWEEPER_X_THRESH = NogginConstants.MY_GOALBOX_RIGHT_X + 90.
-SWEEPER_X = NogginConstants.MY_GOALBOX_RIGHT_X + 25.
+SWEEPER_X_THRESH = NogginConstants.LANDMARK_MY_FIELD_CROSS[0]
+SWEEPER_X = NogginConstants.MY_GOALBOX_RIGHT_X + 60.
 SWEEPER_Y = NogginConstants.CENTER_FIELD_Y
 SWEEPER_Y_OFFSET = 20.
 STOPPER_X = NogginConstants.LANDMARK_MY_FIELD_CROSS[0]

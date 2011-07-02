@@ -64,8 +64,7 @@
 class MotionSwitchboard {
 public:
     MotionSwitchboard(boost::shared_ptr<Sensors> s,
-		      boost::shared_ptr<Profiler> p,
-		      boost::shared_ptr<NaoPose> pose);
+            boost::shared_ptr<NaoPose> pose);
     ~MotionSwitchboard();
 
     void start();
@@ -85,6 +84,7 @@ public:
     void sendMotionCommand(const UnfreezeCommand::ptr command);
     void sendMotionCommand(const StepCommand::ptr command);
     void sendMotionCommand(const DestinationCommand::ptr command);
+    void walkPose();
 
 public:
     void stopHeadMoves(){headProvider.requestStop();}
@@ -128,7 +128,6 @@ private:
 
 private:
     boost::shared_ptr<Sensors> sensors;
-    boost::shared_ptr<Profiler> profiler;
     WalkProvider walkProvider;
     ScriptedProvider scriptedProvider;
     HeadProvider headProvider;
@@ -149,6 +148,7 @@ private:
 
     int frameCount;
     bool running;
+    bool shouldWalkPose;
     mutable bool newJoints; //Way to track if we ever use the same joints twice
 
     bool readyToSend;

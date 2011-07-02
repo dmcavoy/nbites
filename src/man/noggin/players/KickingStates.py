@@ -12,7 +12,13 @@ def kickBallExecute(player):
     """
     if player.firstFrame():
         player.brain.tracker.trackBall()
-        player.executeMove(player.brain.kickDecider.getSweetMove())
+        if transitions.ballInPosition(player):
+            player.executeMove(player.brain.kickDecider.getSweetMove())
+        else:
+            #Either it's close and we can't kick it now or it's far
+            #away and we should search.  Lets hope its close and let
+            #positionForKick put us in findBall if needed
+            player.goNow('positionForKick')
 
         #if player.penaltyKicking:
         if not player.penaltyMadeFirstKick:
@@ -31,23 +37,25 @@ def afterKick(player):
     State to follow up after a kick.
     Currently exits after one frame.
     """
-    # trick the robot into standing up instead of leaning to the side
     if player.firstFrame():
-        player.standup()
+        player.walkPose()        # stand up right, ready to walk
         player.brain.tracker.trackBall()
 
         kick = player.brain.kickDecider.getKick()
 
         # We need to find it!
-        if not player.brain.ball.on:
+        if not player.brain.ball.vis.on:
             if kick is kicks.LEFT_SIDE_KICK:
                 player.brain.tracker.lookToDir("right")
             elif kick is kicks.RIGHT_SIDE_KICK:
                 player.brain.tracker.lookToDir("left")
             elif (kick is kicks.RIGHT_DYNAMIC_STRAIGHT_KICK or
-                  kick is kicks.LEFT_DYNAMIC_STRAIGHT_KICK):
+                  kick is kicks.LEFT_DYNAMIC_STRAIGHT_KICK or
+                  kick is kicks.SHORT_QUICK_LEFT_KICK or
+                  kick is kicks.SHORT_QUICK_RIGHT_KICK):
                 player.brain.tracker.kickDecideScan() # should scan upper reaches.
             else:
+                player.inKickingState = False
                 return player.goLater('spinAfterBackKick')
 
         if player.penaltyKicking:

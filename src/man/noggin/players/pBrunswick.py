@@ -9,10 +9,10 @@ from . import GoaliePositionStates
 from . import GoalieSaveStates
 from . import BrunswickStates
 
-from .. import NogginConstants
+import noggin_constants as NogginConstants
 from ..playbook import PBConstants
 
-from man.noggin.typeDefs.Location import Location
+from objects import Location
 
 class SoccerPlayer(SoccerFSA.SoccerFSA):
     def __init__(self, brain):
@@ -37,19 +37,14 @@ class SoccerPlayer(SoccerFSA.SoccerFSA):
         self.counterLeftSave = 0
         self.counterCenterSave = 0
 
+        self.isSaving = False
+        self.shouldSaveCounter = 0
+
         #END GOALIE COUNTERS AND BOOLEANS
 
         self.frameCounter = 0
 
         self.shouldRelocalizeCounter = 0
-
-        # Penalty kick player variables
-        self.penaltyKicking = False
-        self.penaltyMadeFirstKick = True
-        self.penaltyMadeSecondKick = False
-
-        # Kickoff kick
-        self.hasKickedOff = True
 
         # Orbiting
         self.angleToOrbit = 0.0
@@ -58,10 +53,16 @@ class SoccerPlayer(SoccerFSA.SoccerFSA):
         self.play = self.brain.play
         gcState = self.brain.gameController.currentState
 
-        # WHY: do we not change on the first frame???
-        if (gcState == 'gamePlaying' or\
-                (gcState == 'penaltyShotsGamePlaying'
-                 and self.play.isRole(PBConstants.GOALIE))):
+        if (gcState == 'gamePlaying'):
+            roleState = self.getNextState()
+
+            if roleState != self.currentState:
+                self.switchTo(roleState)
+
+        #Goalie Penalty Kicking
+        if (gcState == 'penaltyShotsGamePlaying'
+                 and self.play.isRole(PBConstants.GOALIE)):
+            self.penaltyKicking = True
             roleState = self.getNextState()
 
             if roleState != self.currentState:
@@ -90,9 +91,9 @@ class SoccerPlayer(SoccerFSA.SoccerFSA):
             return 'playbookPosition'
 
     def getRoleStateGoalie(self):
-        if self.play.isSubRole(PBConstants.GOALIE_PENALTY_SAVER):
-            return 'penaltyGoalie'
-        if self.play.isSubRole(PBConstants.GOALIE_CHASER):
+        if self.play.isSubRole(PBConstants.GOALIE_KICKOFF):
+            return 'kickOffPosition'
+        elif self.play.isSubRole(PBConstants.GOALIE_CHASER):
             return 'goalieChase'
         elif self.play.isSubRole(PBConstants.GOALIE_SAVE):
             return 'goalieSave'

@@ -31,9 +31,8 @@ using namespace Kinematics;
 //#define DEBUG_WALKPROVIDER
 
 WalkProvider::WalkProvider(shared_ptr<Sensors> s,
-                           shared_ptr<NaoPose> _pose,
-                           shared_ptr<Profiler> p)
-    : MotionProvider(WALK_PROVIDER, p),
+                           shared_ptr<NaoPose> _pose)
+    : MotionProvider(WALK_PROVIDER),
       sensors(s),
       pose(_pose),
       metaGait(),
@@ -69,7 +68,7 @@ void WalkProvider::hardReset(){
 }
 
 void WalkProvider::calculateNextJointsAndStiffnesses() {
-    PROF_ENTER(profiler,P_WALK);
+    PROF_ENTER(P_WALK);
 
 #ifdef DEBUG_WALKPROVIDER
     cout << "WalkProvider::calculateNextJointsAndStiffnesses()"<<endl;
@@ -104,12 +103,13 @@ void WalkProvider::calculateNextJointsAndStiffnesses() {
     pendingStepCommands=false;
 
     if (pendingDestCommands) {
-        stepGenerator.setDestination(nextDestCommand->x_mm,
-                                     nextDestCommand->y_mm,
-                                     nextDestCommand->theta_rads,
-                                     nextDestCommand->gain);
-	}
-	pendingDestCommands = false;
+        int framesToDest = stepGenerator.setDestination(nextDestCommand->x_mm,
+							nextDestCommand->y_mm,
+							nextDestCommand->theta_rads,
+							nextDestCommand->gain);
+	nextDestCommand->framesRemaining(framesToDest);
+    }
+    pendingDestCommands = false;
 
     //Also need to process stepCommands here
 
@@ -118,13 +118,17 @@ void WalkProvider::calculateNextJointsAndStiffnesses() {
             " it thinks its DONE if I were you!" <<endl;
     }
 
+    // advance the in-progress DestinationCommand
+    if (nextDestCommand)
+        nextDestCommand->tick();
+
     //ask the step Generator to update ZMP values, com targets
     stepGenerator.tick_controller();
 
     // Now ask the step generator to get the leg angles
-    PROF_ENTER(profiler,P_TICKLEGS);
+    PROF_ENTER(P_TICKLEGS);
     WalkLegsTuple legs_result = stepGenerator.tick_legs();
-    PROF_EXIT(profiler,P_TICKLEGS);
+    PROF_EXIT(P_TICKLEGS);
 
     //Finally, ask the step generator for the arm angles
     WalkArmsTuple arms_result = stepGenerator.tick_arms();
@@ -156,7 +160,7 @@ void WalkProvider::calculateNextJointsAndStiffnesses() {
 
     setActive();
     pthread_mutex_unlock(&walk_provider_mutex);
-    PROF_EXIT(profiler,P_WALK);
+    PROF_EXIT(P_WALK);
 }
 
 void WalkProvider::setCommand(const WalkCommand::ptr command){
@@ -170,11 +174,15 @@ void WalkProvider::setCommand(const WalkCommand::ptr command){
     pthread_mutex_unlock(&walk_provider_mutex);
 }
 
-void WalkProvider::setCommand(const boost::shared_ptr<DestinationCommand> command){
+void WalkProvider::setCommand(const DestinationCommand::ptr command){
     pthread_mutex_lock(&walk_provider_mutex);
-	nextDestCommand = command;
-	pendingDestCommands = true;
-	setActive();
+    // mark the old command as finished, for Python
+    if (nextDestCommand)
+	nextDestCommand->finishedExecuting();
+
+    nextDestCommand = command;
+    pendingDestCommands = true;
+    setActive();
     pthread_mutex_unlock(&walk_provider_mutex);
 }
 
@@ -201,13 +209,18 @@ void WalkProvider::setActive(){
     }
 }
 
-std::vector<BodyJointCommand::ptr> WalkProvider::getGaitTransitionCommand(){
-    pthread_mutex_lock(&walk_provider_mutex);
+std::vector<BodyJointCommand::ptr> WalkProvider::getGaitTransitionCommand()
+{
     vector<float> curJoints = sensors->getMotionBodyAngles();
+
+    pthread_mutex_lock(&walk_provider_mutex);
+
     vector<float> * gaitJoints = stepGenerator.getDefaultStance(nextGait);
 
     startGait = nextGait;
     pendingStartGaitCommands = true;
+
+    pthread_mutex_unlock(&walk_provider_mutex);
 
     float max_change = -M_PI_FLOAT*10.0f;
 
@@ -242,17 +255,19 @@ std::vector<BodyJointCommand::ptr> WalkProvider::getGaitTransitionCommand(){
     vector<float> * stiffness2 = new vector<float>(Kinematics::NUM_JOINTS,
                                                    0.85f);
 
-    commands.push_back(BodyJointCommand::ptr (
-			   new BodyJointCommand(0.5f,safe_larm,NULL,NULL,safe_rarm,
-						stiffness,
-						Kinematics::INTERPOLATION_SMOOTH)
-			   ) );
+    if (time > MOTION_FRAME_LENGTH_S * 30){
+        commands.push_back(
+            BodyJointCommand::ptr (
+                new BodyJointCommand(0.5f,safe_larm,NULL,NULL,safe_rarm,
+                                     stiffness,
+                                     Kinematics::INTERPOLATION_SMOOTH)
+                ) );
+    }
 
     commands.push_back(BodyJointCommand::ptr (
-			   new BodyJointCommand(time,gaitJoints,
-						stiffness2,
-						Kinematics::INTERPOLATION_SMOOTH)
-			   )  );
-    pthread_mutex_unlock(&walk_provider_mutex);
+               new BodyJointCommand(time,gaitJoints,
+                        stiffness2,
+                        Kinematics::INTERPOLATION_SMOOTH)
+               )  );
     return commands;
 }

@@ -1,4 +1,3 @@
-
 # Redirect standard error to standard out
 import time
 import sys
@@ -14,19 +13,20 @@ from man import motion
 import vision
 #from man.corpus import leds
 import sensors
+import noggin_constants as Constants
+import loggingBoard
 
 # Modules from this directory
 from . import GameController
 from . import FallController
 from . import Stability
-from . import NogginConstants as Constants
 from . import Loc
 from . import TeamConfig
 from . import Leds
 from . import robots
 # Packages and modules from sub-directories
 from .headTracking import HeadTracking
-from .typeDefs import (MyInfo, Ball, Landmarks, Sonar, Packet,
+from .typeDefs import (Ball, Sonar, Packet,
                        Play, TeamMember)
 from .navigator import Navigator
 from .util import NaoOutput
@@ -36,6 +36,8 @@ from .kickDecider import KickDecider
 
 import _roboguardian
 import _speech
+
+from objects import (MyInfo, FieldObject, RobotLocation)
 
 class Brain(object):
     """
@@ -56,6 +58,7 @@ class Brain(object):
         # Setup nao modules inside brain for easy access
         self.vision = vision.vision
         self.sensors = sensors.sensors
+        self.logger = loggingBoard.loggingBoard
         self.comm = comm.inst
         self.comm.gc.team = TeamConfig.TEAM_NUMBER
         self.comm.gc.player = TeamConfig.PLAYER_NUMBER
@@ -86,10 +89,14 @@ class Brain(object):
         self.out.printf("GC:  I am player  "+str(TeamConfig.PLAYER_NUMBER))
 
         # Initialize various components
-        self.my = MyInfo.MyInfo()
+        self.my = MyInfo(self.loc)
 
         # Functional Variables
         self.my.playerNumber = self.comm.gc.player
+        if self.comm.gc.color == GameController.TEAM_BLUE:
+            self.my.teamColor = Constants.teamColor.TEAM_BLUE
+        else:
+            self.my.teamColor = Constants.teamColor.TEAM_RED
 
         # Information about the environment
         self.initFieldObjects()
@@ -97,6 +104,8 @@ class Brain(object):
         self.ball = Ball.Ball(self.vision.ball)
         self.play = Play.Play()
         self.sonar = Sonar.Sonar()
+        if Constants.LOG_COMM:
+            self.out.startCommLog()
 
         # Stability data
         self.stability = Stability.Stability(self.sensors)
@@ -118,17 +127,22 @@ class Brain(object):
 
         # Build instances of the vision based field objects
         # Yellow goal left and right posts
-        self.yglp = Landmarks.FieldObject(self.vision.yglp,
-                                          Constants.VISION_YGLP)
+        self.yglp = FieldObject(self.vision.yglp,
+                                Constants.vis_landmark.VISION_YGLP,
+                                self.my)
 
-        self.ygrp = Landmarks.FieldObject(self.vision.ygrp,
-                                          Constants.VISION_YGRP)
+        self.ygrp = FieldObject(self.vision.ygrp,
+                                Constants.vis_landmark.VISION_YGRP,
+                                self.my)
 
         # Blue Goal left and right posts
-        self.bglp = Landmarks.FieldObject(self.vision.bglp,
-                                          Constants.VISION_BGLP)
-        self.bgrp = Landmarks.FieldObject(self.vision.bgrp,
-                                          Constants.VISION_BGRP)
+        self.bglp = FieldObject(self.vision.bglp,
+                                Constants.vis_landmark.VISION_BGLP,
+                                self.my)
+
+        self.bgrp = FieldObject(self.vision.bgrp,
+                                Constants.vis_landmark.VISION_BGRP,
+                                self.my)
 
         # Now we build the field objects to be based on our team color
         self.makeFieldObjectsRelative()
@@ -140,7 +154,7 @@ class Brain(object):
         """
 
         # Blue team setup
-        if self.my.teamColor == Constants.TEAM_BLUE:
+        if self.my.teamColor == Constants.teamColor.TEAM_BLUE:
             # Yellow goal
             self.oppGoalRightPost = self.yglp
             self.oppGoalLeftPost = self.ygrp
@@ -211,11 +225,9 @@ class Brain(object):
         """
         Main control loop called every TIME_STEP milliseconds
         """
-
         # order here is very important
         # Update Environment
         self.time = time.time()
-        self.updateVisualObjects()
         self.sonar.updateSensors(self.sensors)
 
         # Communications update
@@ -223,7 +235,9 @@ class Brain(object):
 
         # Localization Update
         self.updateLocalization()
-        self.ball.updateBestValues(self.my)
+
+        # Choose whether we use Vision or Localization
+        self.updateBestValues()
 
         #Set LEDS
         self.leds.processLeds()
@@ -242,19 +256,6 @@ class Brain(object):
         # Update any logs we have
         self.out.updateLogs()
 
-    def updateVisualObjects(self):
-        """
-        Update information about seen objects
-        """
-        self.ball.updateVision(self.vision.ball)
-
-        self.yglp.updateVision(self.vision.yglp)
-        self.ygrp.updateVision(self.vision.ygrp)
-        self.bglp.updateVision(self.vision.bglp)
-        self.bgrp.updateVision(self.vision.bgrp)
-
-        self.time = time.time()
-
     def updateComm(self):
         temp = self.comm.latestComm()
         for packet in temp:
@@ -262,6 +263,8 @@ class Brain(object):
                 packet = Packet.Packet(packet)
                 if packet.playerNumber != self.my.playerNumber:
                     self.teamMembers[packet.playerNumber-1].update(packet)
+                if Constants.LOG_COMM:
+                    self.out.logRComm(packet)
         # update the activity of our teammates here
         # active field is set to true upon recipt of a new packet.
         for mate in self.teamMembers:
@@ -272,10 +275,18 @@ class Brain(object):
         """
         Update estimates of robot and ball positions on the field
         """
-
-        # Update global information to current estimates
-        self.my.updateLoc(self.loc)
         self.ball.updateLoc(self.loc, self.my)
+        self.my.update()
+
+    def updateBestValues(self):
+        """
+        Update estimates about objects using best information available
+        """
+        self.ball.updateBestValues(self.my)
+        self.yglp.setBest()
+        self.ygrp.setBest()
+        self.bglp.setBest()
+        self.bgrp.setBest()
 
     def updatePlaybook(self):
         """
@@ -306,6 +317,29 @@ class Brain(object):
                           loc.ballVelX,
                           loc.ballVelY)
 
+        if Constants.LOG_COMM:
+            packet = Packet.Packet((TeamConfig.TEAM_NUMBER,
+                                    TeamConfig.PLAYER_NUMBER,
+                                    self.my.teamColor,
+                                    loc.x,
+                                    loc.y,
+                                    loc.h,
+                                    loc.xUncert,
+                                    loc.yUncert,
+                                    loc.hUncert,
+                                    loc.ballX,
+                                    loc.ballY,
+                                    loc.ballXUncert,
+                                    loc.ballYUncert,
+                                    self.ball.dist,
+                                    self.ball.bearing,
+                                    self.play.role,
+                                    self.play.subRole,
+                                    self.playbook.pb.me.chaseTime,
+                                    loc.ballVelX,
+                                    loc.ballVelY))
+            self.out.logSComm(packet)
+
     def resetLocalization(self):
         """
         Reset our localization
@@ -324,7 +358,7 @@ class Brain(object):
         if self.out.loggingLoc:
             self.out.stopLocLog()
             self.out.startLocLog()
-        if self.my.teamColor == Constants.TEAM_BLUE:
+        if self.my.teamColor == Constants.teamColor.TEAM_BLUE:
             self.loc.blueGoalieReset()
         else:
             self.loc.redGoalieReset()
