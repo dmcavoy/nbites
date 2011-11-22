@@ -20,14 +20,16 @@ using namespace ALNames;
 #include "Kinematics.h"
 using Kinematics::jointsMaxVelNoLoad;
 
+//TODO: this might cause a segfault if the pointer n becomes invalid
 void staticPostSensors(NaoEnactor * n) {
     if (n != NULL) {
         n->postSensors();
+        n->sendCommands();
     }
 }
 void staticSendCommands(NaoEnactor * n) {
     if (n != NULL) {
-        n->sendCommands();
+        // n->sendCommands();
     }
 }
 
@@ -52,12 +54,12 @@ NaoEnactor::NaoEnactor(boost::shared_ptr<Sensors> s,
 
     // TODO: Should use specialized proxy created at start
     try {
-        dcmPreConnection =
-            broker->getProxy("DCM")->getModule()->
-            atPostProcess(boost::bind(&staticPostSensors,this));
         dcmPostConnection =
             broker->getProxy("DCM")->getModule()->
-            atPreProcess(boost::bind(&staticSendCommands,this));
+            atPostProcess(boost::bind(&staticPostSensors,this));
+        // dcmPreConnection =
+        //     broker->getProxy("DCM")->getModule()->
+        //     atPreProcess(boost::bind(&staticSendCommands,this));
     } catch (AL::ALError& e){
         cout << "Failed to set pre/postprocess DCM commands" << endl;
     }
@@ -65,6 +67,7 @@ NaoEnactor::NaoEnactor(boost::shared_ptr<Sensors> s,
 
 NaoEnactor::~NaoEnactor()
 {
+    cout << "Nao enactor destructor" << endl;
     dcmPreConnection.disconnect();
     dcmPostConnection.disconnect();
 }
@@ -74,11 +77,6 @@ void NaoEnactor::sendCommands(){
 
     PROF_ENTER(P_DCM);
     PROF_ENTER(P_PRE_PROCESS);
-    if(!switchboard){
-        if(switchboardSet)
-            cout<< "Caution!! Switchboard is null, skipping NaoEnactor"<<endl;
-        return;
-    }
 
     sendHardness();
     sendJoints();
@@ -97,7 +95,7 @@ void NaoEnactor::sendJoints()
 
 #ifndef NO_ACTUAL_MOTION
     try {
-        joint_command[4][0] = dcmProxy->getTime(20);
+        joint_command[4][0] = dcmProxy->getTime(10);
         dcmProxy->setAlias(joint_command); // Takes a long time for some reason
     }
     catch(AL::ALError& a)
@@ -151,9 +149,6 @@ void NaoEnactor::postSensors(){
     sensors->setMotionBodyAngles(motionValues);
     transcriber->postMotionSensors();
 
-    if(!switchboard){
-        return;
-    }
     //We only want the switchboard to start calculating new joints once we've
     //updated the latest sensor information into Sensors
     switchboard->signalNextFrame();
@@ -231,7 +226,7 @@ void NaoEnactor::initDCMCommands(){
     us_command[2][0].arraySetSize(2);
     us_command[2][0][0] = (4.0 + 64.0);
     try {
-        us_command[2][0][1] = dcmProxy->getTime(5);
+        us_command[2][0][1] = dcmProxy->getTime(0);
         dcmProxy->set(us_command);
     } catch(AL::ALError& a) {
         std::cout << "DCM ultrasound set error" << a.toString() << "    "

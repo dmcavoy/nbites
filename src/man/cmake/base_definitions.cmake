@@ -42,7 +42,7 @@ endif()
 
 # Default (no release specific) build flags
 SET( CMAKE_CXX_FLAGS
-  "${CMAKE_CXX_FLAGS} -m32 -Wall -Wconversion -Wno-unused -Wno-write-strings")
+  "${CMAKE_CXX_FLAGS} -m32 -Wall -Wconversion -Wno-unused -Wno-write-strings -fno-strict-aliasing")
 SET( CMAKE_C_FLAGS
   "${CMAKE_CXX_FLAGS}" )
 # Release build flags
@@ -154,10 +154,11 @@ SET(
   CACHE INTERNAL "Install prefix"
   )
 
-SET( OUTPUT_ROOT_DIR_BIN "${CMAKE_INSTALL_PREFIX}/bin"		  )
-SET( OUTPUT_ROOT_DIR_DOC "${CMAKE_INSTALL_PREFIX}/doc"		  )
-SET( OUTPUT_ROOT_DIR_LIB "${CMAKE_INSTALL_PREFIX}/lib/naoqi/"     )
-SET( OUTPUT_ROOT_DIR_PREF "${CMAKE_INSTALL_PREFIX}/preferences/"  )
+SET( OUTPUT_ROOT_DIR_BIN "${CMAKE_INSTALL_PREFIX}/bin" )
+SET( OUTPUT_ROOT_DIR_DOC "${CMAKE_INSTALL_PREFIX}/doc" )
+SET( OUTPUT_ROOT_DIR_LIB "${CMAKE_INSTALL_PREFIX}/lib" )
+SET( OUTPUT_ROOT_DIR_NAOQI_LIB "${CMAKE_INSTALL_PREFIX}/lib/naoqi" )
+SET( OUTPUT_ROOT_DIR_PREF "${CMAKE_INSTALL_PREFIX}/preferences" )
 
 ########################### NB Common definitions
 include ( ${NBITES_DIR}/src/man/cmake/FindNBCOMMON.cmake )

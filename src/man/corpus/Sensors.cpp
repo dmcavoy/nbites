@@ -70,7 +70,9 @@ Sensors::Sensors(boost::shared_ptr<Speech> s) :
         bodyAnglesError(Kinematics::NUM_JOINTS, 0.0f),
         bodyTemperatures(Kinematics::NUM_JOINTS, 0.0f),
         yImage(&global_image[0]), uvImage(&global_image[0]),
-        colorImage(reinterpret_cast<uint8_t*>(&global_image[0])), naoImage(NULL),
+        colorImage(reinterpret_cast<uint8_t*>(&global_image[0])),
+        naoImage(NULL),
+        roboImage(),
         varianceMonitor(MONITOR_COUNT, "SensorVariance", sensorNames),
         ballVariance(),
         fsrMonitor(BUMPER_LEFT_L, "FSR_Variance", fsrNames),
@@ -106,13 +108,15 @@ Sensors::Sensors(boost::shared_ptr<Speech> s) :
             SensorMonitor::DONT_CHECK, SONAR_HIGH);
 
     // all FSRs have the same variance range
-    for (int i = 0; i <= FSR_RIGHT_B_R; ++i)
+    for (int i = 0; i <= FSR_RIGHT_B_R; ++i) {
         fsrMonitor.Sensor(i).setVarianceBounds(SensorMonitor::DONT_CHECK,
                 FSR_HIGH);
+    }
 
     // give the variance monitors access to speech
     varianceMonitor.SpeechPointer(speech);
-    fsrMonitor.SpeechPointer(speech);
+    // talking robots are annoying
+    //fsrMonitor.SpeechPointer(speech);
 
     // THIS IS AN OCTAL NUMBER, must start with 0
     mkdir(FRM_FOLDER.c_str(), 0755); // permissions: u+rwx, og+rx
@@ -379,10 +383,12 @@ const float Sensors::getBatteryCurrent() const {
     return current;
 }
 
-void Sensors::setBodyAngles(const vector<float>& v) {
+void Sensors::setBodyAngles(float* jointVPointers[]) {
     angles_mutex.lock();
 
-    bodyAngles = v;
+    for (uint i = 0; i < Kinematics::NUM_JOINTS; i++) {
+    	bodyAngles[i] = *jointVPointers[i];
+    }
     /*
      cout << "Body angles in sensors";
      for (int i = 0 ; i < 22; i++){
@@ -418,10 +424,12 @@ void Sensors::setBodyAngleErrors(const vector<float>& v) {
     errors_mutex.unlock();;
 }
 
-void Sensors::setBodyTemperatures(const vector<float>& v) {
+void Sensors::setBodyTemperatures(float* jointTPointers[]) {
     temperatures_mutex.lock();
 
-    bodyTemperatures = v;
+    for (uint i = 0; i < Kinematics::NUM_JOINTS; i++) {
+    	bodyTemperatures[i] = *jointTPointers[i];
+    }
 
     temperatures_mutex.unlock();;
 }
@@ -618,14 +626,14 @@ void Sensors::updateVisionAngles() {
 }
 
 //get a pointer to the full size Nao image
-//the pointer comes straight from the transcriber (no copying)
-uint8_t* Sensors::getRawNaoImage() {
-    return rawNaoImage;
+//this image has been copied to some local buffer
+const uint8_t* Sensors::getNaoImage() const {
+    return naoImage;
 }
 
 //get a pointer to the full size Nao image
 //this image has been copied to some local buffer
-const uint8_t* Sensors::getNaoImage() const {
+uint8_t* Sensors::getWriteableNaoImage() {
     return naoImage;
 }
 
@@ -646,17 +654,16 @@ const uint8_t* Sensors::getColorImage() const {
 }
 
 void Sensors::setNaoImagePointer(char* _naoImage) {
-    cout << "I am being set!" << endl;
-    naoImage = (uint8_t*) _naoImage;
+    naoImage = reinterpret_cast<uint8_t*>(_naoImage);
+    roboImage.updateImagePointer(naoImage);
 }
 
-void Sensors::setRawNaoImage(uint8_t *img) {
-    rawNaoImage = img;
-}
-
-void Sensors::setNaoImage(const uint8_t *img) {
-    naoImage = img;
+void Sensors::notifyNewNaoImage() {
     this->notifySubscribers(NEW_IMAGE);
+}
+
+const man::memory::RoboImage* Sensors::getRoboImage() const {
+    return &roboImage;
 }
 
 void Sensors::setImage(const uint16_t *img) {
@@ -831,7 +838,6 @@ void Sensors::saveFrame() {
 
     // Write sensors
     float sensor_data[NUM_SENSORS];
-    uint bytes_copied;
     FSR lfsr = getLeftFootFSR();
     sensor_data[0] = lfsr.frontLeft;
     sensor_data[1] = lfsr.frontRight;

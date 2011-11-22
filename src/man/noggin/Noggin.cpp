@@ -26,6 +26,7 @@
 #define USE_LOC_CORNERS
 static const float MAX_CORNER_DISTANCE = 150.0f;
 static const float MAX_CROSS_DISTANCE = 150.0f;
+static const unsigned int NUM_PYTHON_RESTARTS_MAX = 3;
 using namespace std;
 using namespace boost;
 
@@ -79,6 +80,7 @@ Noggin::Noggin (shared_ptr<Vision> v,
 
 Noggin::~Noggin ()
 {
+    cout << "Noggin destructor" << endl;
     Py_XDECREF(brain_instance);
     Py_XDECREF(brain_module);
 #   ifdef LOG_LOC
@@ -248,11 +250,11 @@ void Noggin::runStep ()
     }
 
 #   ifdef USE_NOGGIN_AUTO_HALT
-    // don't bother doing anything if there's a Python error and we
-    // haven't reloaded
-    if (error_state) {
+    static unsigned int num_crashed = 0;
+    if (error_state && num_crashed < NUM_PYTHON_RESTARTS_MAX) {
         this->reload_hard();
         error_state = false;
+        num_crashed++;
     }
 #   endif
 
@@ -543,7 +545,7 @@ void Noggin::modifySysPath ()
 #    if defined OFFLINE || defined STRAIGHT
        const char *cwd = "/usr/local/nao-1.6/modules/lib";
 #    else
-       const char *cwd = "/home/nao/naoqi/lib/naoqi";
+       const char *cwd = "/home/nao/naoqi/lib";
 #    endif
 #  endif
 
@@ -564,11 +566,6 @@ void Noggin::modifySysPath ()
         PyList_Append(path, PyString_FromString(cwd));
         Py_DECREF(sys_module);
     }
-
-#if !ROBOT(NAO)
-    free(cwd);
-#endif
-
 }
 
 #ifdef LOG_LOCALIZATION

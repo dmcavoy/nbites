@@ -1,8 +1,8 @@
 /**
  * @class BMPYUVImage
  *
- * Extends YUVImage in that it keeps an instance of a QImage that we update
- * each time the image gets updated
+ * Extends YUVImage in that it keeps an instance of a QImage (a bitmap) that we
+ * update each time the image gets updated
  *
  */
 
@@ -31,15 +31,15 @@ class BMPYUVImage : public YUVImage
 {
 
 public:
-    BMPYUVImage(const man::memory::RoboImage* _roboImage);
+    BMPYUVImage(man::memory::MImage::const_ptr rawImage);
     virtual ~BMPYUVImage() {};
-    virtual void updateFromRoboImage();
+    virtual void updateFromRawImage();
     void updateBitmap();
 
     BitmapType getCurrentBitmapType() const { return bitmapType; }
     void setBitmapType(BitmapType type) { bitmapType = type; updateBitmap();}
 
-    QImage getBitmap(BitmapType type = Color) const { return bitmap; }
+    QImage getBitmap() const { return bitmap; }
 
 
 private:

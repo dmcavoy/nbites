@@ -71,7 +71,6 @@ SET( VISION_SRCS Ball
                  Field
                  FieldLines
                  ObjectFragments
-                 Profiler
                  PyVision
                  Robots
                  Threshold
@@ -147,6 +146,8 @@ INSTALL(
 ############################ SET LIBRARIES TO LINK WITH
 TARGET_LINK_LIBRARIES(
   ${VISION_TARGET}
+  ${MEMORY_TARGET}
+  ${NBINCLUDE_TARGET}
   ${PYTHON_LIBRARY} )
 
 

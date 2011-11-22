@@ -13,12 +13,19 @@
 #include "nameconfig.h"
 #include "visionconfig.h"
 #include <time.h>
+#include <assert.h>
+#include <stdint.h>
 
 // ROBOT TYPES
 #define NAO_RL    3
 #define NAO_SIM   4
 #define NAO       5
 #define NAO_RL_33 6  // longer arms, new heads
+
+namespace angle {
+    typedef float radians;
+    typedef float degrees;
+}
 
 // we set ROBOT_TYPE here for now, not in cmake anymore
 // Nathan 4/18/11
@@ -62,6 +69,10 @@ static const int NUM_PLAYERS_PER_TEAM = 4;
 #ifndef true
 #  define true  1
 #  define false 0
+#endif
+
+#ifndef uint
+typedef unsigned int uint;
 #endif
 
 #ifndef byte

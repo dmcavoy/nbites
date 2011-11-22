@@ -4,7 +4,7 @@
 namespace qtool {
 namespace data {
 
-DataLoader::DataLoader(DataManager* dataManager, QWidget *parent) :
+DataLoader::DataLoader(DataManager::ptr dataManager, QWidget *parent) :
     QWidget(parent),
     dataManager(dataManager),
     dataFinder(new OfflineDataFinder())
@@ -40,6 +40,7 @@ DataLoader::~DataLoader()
 
 void DataLoader::newDataSource(DataSource::ptr dataSource) {
     dataManager->newDataSource(dataSource);
+    dataManager->getNext();
 }
 
 }

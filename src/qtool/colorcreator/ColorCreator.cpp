@@ -1,3 +1,30 @@
+/* Main file.  This is a color calibration tool (for now).  Pops up a window
+  that can load image frames and display them in three ways:
+  1) The raw image
+  2) The image calibrated according to a color table, or this tool's controls
+  3) Lots of other things (e.g. just the Y channel of the image)
+
+  We make color tables with this tool by using its sliders.  The sliders control
+  ranges (e.g. set a max and minimum value for Y) for each color.  Those define
+  a region of color space that the color is defined for.  What this does is
+  to quickly build a highly filled in color region.  For now we then go back
+  to the old tool to refine the image.  In the future it would be nice to
+  be able to refine directly in this tool.
+
+  Some things we don't have yet:
+  1) The ability to grab key images and save them into a "key image" directory
+  2) The ability to run our vision code and display object results
+  3) The ability to specify one color's dominance over another (e.g. if pink
+  && orange then choose pink)
+  4) Lots of other stuff I haven't thought of yet
+
+  Things that aren't really done that well (this was intended as a prototype)
+  1) Data management
+  2) More or less everything - this tool is oddly slow, I don't know QT well enough
+  to know why.
+  */
+
+
 #include "ColorCreator.h"
 #include "ui_ColorCreator.h"
 #include "math.h"
@@ -15,22 +42,20 @@ namespace qtool {
 namespace colorcreator {
 
 using data::DataManager;
-using man::memory::RoboImage;
 
-ColorCreator::ColorCreator(DataManager* dataManager, QWidget *parent) :
-    QWidget(parent),
+ColorCreator::ColorCreator(DataManager::ptr dataManager, QWidget *parent) :
+    QMainWindow(parent),
     dataManager(dataManager),
     ui(new Ui::ColorCreator),
-    roboImage(dataManager->getMemory()->getMImage()),
-    yuvImage(roboImage)
+    yuvImage(dataManager->getMemory()->getMImage())
 {
-
+    // Display images
     img = new QImage(640, 480, QImage::Format_RGB32);
     img2 = new QImage(320, 240, QImage::Format_RGB32);
     img3 = new QImage(320, 240, QImage::Format_RGB32);
     img4 = new QImage(320, 240, QImage::Format_RGB32);
     wheel = new QImage(200, 200, QImage::Format_RGB32);
-
+    // Each color gets its own value for everything specified by sliders
     hMin = new float[COLORS];
     hMax = new float[COLORS];
     sMin = new float[COLORS];
@@ -69,11 +94,17 @@ ColorCreator::ColorCreator(DataManager* dataManager, QWidget *parent) :
     bitColor[Navy] = NAVY_COL;
     bitColor[Black] = GREY_COL;
 
+    this->setCorner(Qt::TopRightCorner, Qt::RightDockWidgetArea);
+    this->setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
+
     ui->setupUi(this);
+    //  default directories - should not be user specific
     baseDirectory = "/Users/ericchown/nbites/data/frames";
     baseColorTable = "/Users/ericchown/nbites/data/tables";
     haveFile = false;
     viewerEnabled = false;
+
+    cornerStatus = true;
 
     ui->colorSelect->addItem(tr("Orange"), Orange);
     ui->colorSelect->addItem(tr("Blue"), Blue);
@@ -111,6 +142,8 @@ ColorCreator::ColorCreator(DataManager* dataManager, QWidget *parent) :
 
     // initialize all of our values.  Ideally these will serve as a pretty good table
     // for virtually any environment
+    // Note: it would be nice to be able to save values from various locations and
+    // load the appropriate one here
     for (int i = 0; i < COLORS; i++)
     {
         switch(i)
@@ -213,6 +246,7 @@ ColorCreator::ColorCreator(DataManager* dataManager, QWidget *parent) :
             break;
         }
     }
+    // set the sliders to start at correct values
     ui->hMin->setValue(hMin[currentColor] * 100);
     ui->hMax->setValue(hMax[currentColor] * 100);
     ui->sMin->setValue(sMin[currentColor] * 100);
@@ -224,11 +258,55 @@ ColorCreator::ColorCreator(DataManager* dataManager, QWidget *parent) :
     ui->vMin->setValue(vMin[currentColor]);
     ui->vMax->setValue(vMax[currentColor]);
     ui->zSlice->setValue(zSlice);
+
+    firstPoint.setX(-1);
+    firstPoint.setY(-1);
+    setMouseTracking(true);
 }
 
 ColorCreator::~ColorCreator()
 {
     delete ui;
+}
+
+void ColorCreator::mouseMoveEvent(QMouseEvent *event)
+{
+    //TODO: this is currently broken
+    // the right way to do it is not to capture the mouse event in colorcreator
+    // and then translate it to the thresh widget, but to actually implement
+    // on the thresh widget itself - Octavian
+    QTextStream out(stdout);
+    //translate the pointer point to widget coordinates
+    QPoint thePoint = ui->thresh->mapFrom(this, event->pos());
+    QRect thresholdedImageFrame = ui->thresh->frameRect();
+    if (thresholdedImageFrame.contains(thePoint) && haveFile
+            && ui->thresh->isVisible()) {
+        //we want coordinates relative to the top left corner
+        //of the thresholded image
+        int x = thePoint.x();
+        int y = thePoint.y();
+        int Y = yuvImage.getY(x, y);
+        int U = yuvImage.getU(x, y);
+        int V = yuvImage.getV(x, y);
+        int H = yuvImage.getH(x, y);
+        int S = yuvImage.getS(x, y);
+        int Z = yuvImage.getZ(x, y);
+        out << "YUV :" << Y << " " << U << " " << V << "\n";
+        out << "HSZ :" << H << " " << S << " " << Z << "\n";
+    }
+}
+
+void ColorCreator::mouseReleaseEvent(QMouseEvent *event)
+{
+    lastPoint = event->pos() - ui->thresh->pos();
+    if (lastPoint.x() - firstPoint.x() > 20) {
+        largeDisplay();
+    }
+}
+
+void ColorCreator::mousePressEvent(QMouseEvent *event)
+{
+   firstPoint = event->pos() - ui->thresh->pos();
 }
 
 void ColorCreator::updateDisplays()
@@ -246,81 +324,92 @@ void ColorCreator::updateDisplays()
     tenthFrame = currentDirectory + "/" + plusTen + EXTENSION;
     minusTenthFrame = currentDirectory + "/" + plusTen + EXTENSION;
     haveFile = true;
-    updateThresh();
+    updateThresh(true, false, false);
 }
 
+/* We display a color wheel to indicate the current color's region.  It is a 2D slice
+  in 3D space (slicing on the V dimension (called Z here)) of HSV space.
+  Here we just loop through the display area, calculate an angle and distance to the
+  center (angle = H, distance = S) and determine whether any given pixel ought to
+  be displayed for the current color settings.
+  */
 void ColorCreator::updateColors()
 {
     // we draw by using a QImage - turn it into a Pixmap, then put it on a label
     //QImage img(200, 200, QImage::Format_RGB32);
     bool display;
     QColor c;
-    /* Our color wheel has a radius of 100.  Loop through the rectangle
+    if (!ui->tableMode->isChecked()) {
+      /* Our color wheel has a radius of 100.  Loop through the rectangle
       looking for pixels within that radius. For good pixels we calculate
       the H value based on the angle from the origin.  The S value is
       set according to the distance / radius, and the V is fixed (but
-      settable by a slider).
-     */
-    for (int i = 0; i < 200; i++)
-    {
-        for (int j = 0; j < 200; j++)
+      settable by a slider). */
+        for (int i = 0; i < 200; i++)
         {
-            float dist = sqrt((i - 100) * (i - 100) + (j - 100) * (j - 100));
-            if (dist < 100.0)
+            for (int j = 0; j < 200; j++)
             {
-                display = true;
-                float s = dist / 100.0f;
-                float h = atan2(i - 100, j - 100) / (2.0f * 3.14156);
-                if (h < 0)
+                float dist = sqrt((i - 100) * (i - 100) + (j - 100) * (j - 100));
+                if (dist < 100.0)
                 {
-                    h = 1.0f + h;
-                }
-                // Since H is an angle the math is modulo.
-                if (hMax[currentColor] > hMin[currentColor])
-                {
-                    if (hMin[currentColor] > h || hMax[currentColor] < h)
+                    display = true;
+                    float s = dist / 100.0f;
+                    float h = atan2(i - 100, j - 100) / (2.0f * 3.14156);
+                    if (h < 0)
+                    {
+                        h = 1.0f + h;
+                    }
+                    // Since H is an angle the math is modulo.
+                    if (hMax[currentColor] > hMin[currentColor])
+                    {
+                        if (hMin[currentColor] > h || hMax[currentColor] < h)
+                        {
+                            display = false;
+                        }
+                    } else if (hMin[currentColor] > h && hMax[currentColor] < h )
                     {
                         display = false;
                     }
-                } else if (hMin[currentColor] > h && hMax[currentColor] < h )
-                {
-                    display = false;
-                }
-                if (s < sMin[currentColor] || s > sMax[currentColor])
-                {
-                    display = false;
-                }
-                ColorSpace col;
-                col.setHsz(h, s, zSlice);
-                int y = col.getYb();
-                int v = col.getVb();
-                if (y < yMin[currentColor] || y > yMax[currentColor])
-                {
-                    display = false;
-                }
-                if (v < vMin[currentColor] || v > vMax[currentColor])
-                {
-                    display = false;
-                }
-                if (display)
-                {
-                    c.setHsvF(h, s, zSlice);
+                    if (s < sMin[currentColor] || s > sMax[currentColor])
+                    {
+                        display = false;
+                    }
+                    ColorSpace col;
+                    col.setHsz(h, s, zSlice);
+                    int y = col.getYb();
+                    int v = col.getVb();
+                    if (y < yMin[currentColor] || y > yMax[currentColor])
+                    {
+                        display = false;
+                    }
+                    if (v < vMin[currentColor] || v > vMax[currentColor])
+                    {
+                        display = false;
+                    }
+                    if (display)
+                    {
+                        c.setHsvF(h, s, zSlice);
+                    } else{
+                        c.setHsvF(0.0, 0.0, 1.0f);
+                    }
                 } else{
                     c.setHsvF(0.0, 0.0, 1.0f);
                 }
-            } else{
-                c.setHsvF(0.0, 0.0, 1.0f);
+                wheel->setPixel(i, j, c.rgb());
             }
-            wheel->setPixel(i, j, c.rgb());
         }
+        QPixmap pix;
+        pix.convertFromImage(*wheel);
+        ui->colorWheel->setPixmap(pix);
+        ui->colorWheel->repaint();
+        updateThresh(false, false, true);
     }
-    QPixmap pix;
-    pix.convertFromImage(*wheel);
-    ui->colorWheel->setPixmap(pix);
-    ui->colorWheel->repaint();
-    updateThresh();
 }
 
+/* One of our displays is typically used to display a single color
+  channel of our images.  That is controlled here.  Can also display
+  edge information if desired.
+  */
 QColor ColorCreator::getChannelView(int j, int i)
 {
     bool found;
@@ -400,6 +489,14 @@ QColor ColorCreator::getChannelView(int j, int i)
     return col;
 }
 
+/* One of our displays normally displays a thresholded image that is thresholded
+  according to our sliders.  However, we can also display an image that is
+  thresholded according to a color table.  This is mainly to check that our
+  tables/tools are working as desired.
+  @param i      The x value in the image
+  @param j      The y value in the image
+  @return       The thresholded color for that pixel
+  */
 QColor ColorCreator::displayColorTable(int i, int j)
 {
     QColor c;
@@ -452,43 +549,52 @@ QColor ColorCreator::displayColorTable(int i, int j)
     return c;
 }
 
-bool ColorCreator::testValue(float h, float s, float z, int y, int v, int color)
+// Tests if the given parameters are legal for the given color.
+bool ColorCreator::testValue(float h, float s, float z, int y, int u, int v, int color)
 {
-    if (hMax[color] > hMin[color])
-    {
-        if (hMin[color] > h || hMax[color] < h)
+    if (!ui->tableMode->isChecked() || !haveFile) {
+        if (hMax[color] > hMin[color])
+        {
+            if (hMin[color] > h || hMax[color] < h)
+            {
+                return false;
+            }
+        } else if (hMin[color] > h && hMax[color] < h )
         {
             return false;
         }
-    } else if (hMin[color] > h && hMax[color] < h )
-    {
-        return false;
+        if (s < sMin[color] || s > sMax[color])
+        {
+            return false;
+        }
+        else if (z < zMin[color] || z > zMax[color])
+        {
+            return false;
+        }
+        else if (y < yMin[color] || y > yMax[color])
+        {
+            return false;
+        } else if (v < vMin[color] || v > vMax[color])
+        {
+            return false;
+        }
+        return true;
+    } else {
+        unsigned col = table->index(y, u, v);
+        return col & bitColor[color];
     }
-    if (s < sMin[color] || s > sMax[color])
-    {
-        return false;
-    }
-    else if (z < zMin[color] || z > zMax[color])
-    {
-        return false;
-    }
-    else if (y < yMin[color] || y > yMax[color])
-    {
-        return false;
-    } else if (v < vMin[color] || v > vMax[color])
-    {
-        return false;
-    }
-    return true;
 }
 
+/* Controller for the big display.  Normally just displays the current image
+   in its raw form. */
 void ColorCreator::largeDisplay()
 {
     bool display;
     QColor c;
-    for (int i = 0; i < WIDTH; i++)
+    bool regionSet = firstPoint.x() > -1;
+    for (int i = 0; i < yuvImage.getWidth(); i++)
     {
-        for (int j = 0; j < HEIGHT; j++)
+        for (int j = 0; j < yuvImage.getHeight(); j++)
         {
             bool looping = true;
             int start = Orange;
@@ -500,12 +606,13 @@ void ColorCreator::largeDisplay()
             do {
                 display = true;
                 int y = yuvImage.getY(i, j);
+                int u = yuvImage.getU(i, j);
                 int v = yuvImage.getV(i, j);
                 float s = (float)yuvImage.getS(i, j) / 256.0f;
                 float h = (float)yuvImage.getH(i, j) / 256.0f;
                 float z = (float)yuvImage.getZ(i, j) / 256.0f;
                 // Since H is an angle the math is modulo.
-                display = testValue(h, s, z, y, v, start);
+                display = testValue(h, s, z, y, u, v, start);
                 c = cols[start];
                 if (display)
                 {
@@ -513,20 +620,20 @@ void ColorCreator::largeDisplay()
                     // check for some common overlaps
                     if (start == Orange)
                     {
-                        if (testValue(h, s, z, y, v, Pink))
+                        if (testValue(h, s, z, y, u, v, Pink))
                         {
                             c = cols[OrangeRed];
                         }
                     } else if (start == Green)
                     {
-                        if (testValue(h, s, z, y, v, Blue))
+                        if (testValue(h, s, z, y, u, v, Blue))
                         {
                             c = cols[BlueGreen];
                         }
                     }
                     else if (start == Blue)
                     {
-                        if (testValue(h, s, z, y, v, Navy))
+                        if (testValue(h, s, z, y, u, v, Navy))
                         {
                             c = cols[BlueNavy];
                         }
@@ -543,6 +650,23 @@ void ColorCreator::largeDisplay()
             } while (looping);
         }
     }
+    if (regionSet && ui->tableMode->isChecked()) {
+        c = cols[Black];
+        for (int k = firstPoint.x(); k < lastPoint.x(); k++)
+        {
+            img->setPixel(k, firstPoint.y(), c.rgb());
+            img->setPixel(k, firstPoint.y()+1, c.rgb());
+            img->setPixel(k, lastPoint.y(), c.rgb());
+            img->setPixel(k, lastPoint.y()+1, c.rgb());
+        }
+        for (int l = firstPoint.y(); l < lastPoint.y(); l++)
+        {
+            img->setPixel(firstPoint.x(), l, c.rgb());
+            img->setPixel(firstPoint.x()+1, l, c.rgb());
+            img->setPixel(lastPoint.x(), l, c.rgb());
+            img->setPixel(lastPoint.x()+1, l, c.rgb());
+        }
+    }
     QPixmap pix;
     pix.convertFromImage(*img);
     ui->thresh->setPixmap(pix);
@@ -550,7 +674,11 @@ void ColorCreator::largeDisplay()
 
 }
 
-void ColorCreator::updateThresh()
+/* This is called when something happens that requires updating the
+  thresholded image (e.g. a color definition changed).  It makes sure
+  that everything gets update accordingly.
+  */
+void ColorCreator::updateThresh(bool imageChanged, bool choiceChanged, bool colorsChanged)
 {
     if (haveFile)
     {
@@ -560,9 +688,9 @@ void ColorCreator::updateThresh()
         int red, blue, green;
         initStats();
         largeDisplay();
-        for (int i = 0; i < WIDTH; i+=2)
+        for (int i = 0; i < yuvImage.getWidth(); i+=2)
         {
-            for (int j = 0; j < HEIGHT; j+=2)
+            for (int j = 0; j < yuvImage.getHeight(); j+=2)
             {
                 bool looping = true;
                 int start = Orange;
@@ -571,25 +699,33 @@ void ColorCreator::updateThresh()
                     stats = true;
                     start = currentColor;
                 }
-                red = yuvImage.getRed(i, j);
-                green = yuvImage.getGreen(i, j);
-                blue = yuvImage.getBlue(i, j);
-                c.setRgb(red, green, blue);
-                img2->setPixel(i/2, j/2, c.rgb());
-                c = getChannelView(i, j);
-                img3->setPixel(i/2, j/2, c.rgb());
-                c.setRgb(0, 0, 0);
-                c.setRgb(255,255,255);
+                if (imageChanged) {
+                    red = yuvImage.getRed(i, j);
+                    green = yuvImage.getGreen(i, j);
+                    blue = yuvImage.getBlue(i, j);
+                    c.setRgb(red, green, blue);
+                    img2->setPixel(i/2, j/2, c.rgb());
+                }
+                if (imageChanged || choiceChanged) {
+                    c = getChannelView(i, j);
+                    img3->setPixel(i/2, j/2, c.rgb());
+                    c.setRgb(0, 0, 0);
+                    c.setRgb(255,255,255);
+                }
             }
         }
-        QPixmap pix2;
-        pix2.convertFromImage(*img2);
-        ui->view2->setPixmap(pix2);
-        ui->view2->repaint();
-        QPixmap pix3;
-        pix3.convertFromImage(*img3);
-        ui->view3->setPixmap(pix3);
-        ui->view3->repaint();
+        if (imageChanged) {
+            QPixmap pix2;
+            pix2.convertFromImage(*img2);
+            ui->view2->setPixmap(pix2);
+            ui->view2->repaint();
+        }
+        if (imageChanged || choiceChanged) {
+            QPixmap pix3;
+            pix3.convertFromImage(*img3);
+            ui->view3->setPixmap(pix3);
+            ui->view3->repaint();
+        }
         if (stats)
         {
             outputStats();
@@ -597,6 +733,8 @@ void ColorCreator::updateThresh()
     }
 }
 
+/* We can keep stats on the colors.  Init them for use.
+  */
 void ColorCreator::initStats()
 {
     statsSMin = 1.0f;
@@ -613,6 +751,12 @@ void ColorCreator::initStats()
     statsVMax = 0;
 }
 
+/* Collect the stats.  THis is called in a loop.  Each pixel
+  is added to the stats.
+  Note: check if needed or if this is slowing things down.
+  @param x    x value of pixel
+  @param y    y value of pixel
+  */
 void ColorCreator::collectStats(int x, int y)
 {
     float s = (float)yuvImage.getS(x, y) / 256.0f;
@@ -646,33 +790,6 @@ void ColorCreator::outputStats()
     out << "U: " << statsUMin << " " << statsUMax << "\n";
     out << "V: " << statsVMin << " " << statsVMax << "\n";
 }
-
-void ColorCreator::on_pushButton_clicked()
-{
-    currentDirectory = QFileDialog::getOpenFileName(this, tr("Open Image"),
-                                            currentDirectory,
-                                            tr("Image Files (*.log)"));
-    yuvImage.updateFromRoboImage();
-    updateDisplays();
-}
-
-void ColorCreator::on_previousButton_clicked()
-{
-    //yuvImage.read(previousFrame);
-    currentFrameNumber--;
-    updateDisplays();
-}
-
-void ColorCreator::on_nextButton_clicked()
-{
-    //yuvImage.read(nextFrame);
-    //imageParser->getNext();
-    //yuvImage.updateFromRoboImage();
-    dataManager->getNext();
-    currentFrameNumber++;
-    //updateDisplays();
-}
-
 
 void ColorCreator::on_hMin_valueChanged(int value)
 {
@@ -728,6 +845,8 @@ void ColorCreator::on_zSlice_valueChanged(int value)
     updateColors();
 }
 
+/* Called when the user picks a new color to work on.
+  */
 void ColorCreator::on_colorSelect_currentIndexChanged(int index)
 {
     currentColor = index;
@@ -744,10 +863,13 @@ void ColorCreator::on_colorSelect_currentIndexChanged(int index)
     ui->zSlice->setValue((zMin[currentColor] + zMax[currentColor]) * 50);
 }
 
+/* Called when the user wants to view something different.
+  @param value    the new value selected
+  */
 void ColorCreator::on_viewChoice_currentIndexChanged(int index)
 {
     mode = index;
-    updateThresh();
+    updateThresh(false, true, false);
 }
 
 void ColorCreator::on_zMin_valueChanged(int value)
@@ -777,6 +899,11 @@ void ColorCreator::on_getColorTable_clicked()
     currentColorDirectory.chop(currentColorDirectory.size() - last);
 }
 
+/* Writes out a color table.  The "new" part of the format is that it
+  writes the color table using bitwise color definitions instead of the
+  old integer definitions.
+  @param filename        the name to write
+  */
 void ColorCreator::writeNewFormat(QString filename)
 {
     QFile file(filename);
@@ -832,6 +959,10 @@ void ColorCreator::writeNewFormat(QString filename)
     file.close();
 }
 
+/* Writes a color table of the old format.  Old meaning integer definitions.
+  So we should never use this anymore.
+  @param filename        the name of the file to write
+  */
 void ColorCreator::writeOldFormat(QString filename)
 {
     QFile file(filename);
@@ -937,7 +1068,8 @@ void ColorCreator::writeOldFormat(QString filename)
     file.close();
 }
 
-
+/* The user wants to write a color table.
+  */
 void ColorCreator::on_writeNew_clicked()
 {
     QString filename = baseColorTable + "/new.mtb";
@@ -945,29 +1077,15 @@ void ColorCreator::on_writeNew_clicked()
     writeNewFormat(filename);
 }
 
-
-void ColorCreator::on_plusTen_clicked()
-{
-    //yuvImage.read(tenthFrame);
-    currentFrameNumber += 10;
-    updateDisplays();
-}
-
-void ColorCreator::on_minusTen_clicked()
-{
-    //yuvImage.read(minusTenthFrame);
-    currentFrameNumber -= 10;
-    updateDisplays();
-}
-
-
-
 void ColorCreator::on_channel_currentIndexChanged(int index)
 {
     shape = index;
-    updateThresh();
+    updateThresh(false, true, false);
 }
 
+/* Loads and old style color table.  Note: it will be automatically
+  converted to the new format (which is the main reason to do this).
+  */
 void ColorCreator::on_getOldTable_clicked()
 {
     currentColorDirectory = QFileDialog::getOpenFileName(this, tr("Open Old Color Table"),
@@ -978,17 +1096,23 @@ void ColorCreator::on_getOldTable_clicked()
     currentColorDirectory.chop(currentColorDirectory.size() - last);
 }
 
+/* User wants a new edge thing.  This was inadvertently added.
+  */
 void ColorCreator::on_edgeDiff_actionTriggered(int action)
 {
 
 }
 
+/* User changes the edge threshold.  When displaying edge
+  images we use an int to determine what constitutes an edge.
+  @param value      the new value to use
+  */
 void ColorCreator::on_edgeDiff_valueChanged(int value)
 {
     QTextStream out(stdout);
     out << "Set threshold to " << value << "\n";
     edgediff = value;
-    updateThresh();
+    updateThresh(false, true, false);
 }
 
 void ColorCreator::on_vMin_valueChanged(int value)
@@ -1006,6 +1130,88 @@ void ColorCreator::on_vMax_valueChanged(int value)
     QTextStream out(stdout);
     out << "Set V Max value to " << value << "\n";
 }
+
+void ColorCreator::on_cornerDefine_clicked()
+{
+    cornerStatus = !cornerStatus;
+}
+
+void ColorCreator::on_changeColor_clicked()
+{
+    if (ui->tableMode->isChecked() && firstPoint.x() > -1)
+    {
+        int y, u, v, yHigh, uHigh, vHigh, yLow, uLow, vLow;
+        if (ui->defUndef->isChecked())
+        {
+            // collect up all of the pixels in the region that are not the right color
+            y = u = v = 255;
+            yLow = uLow = vLow = 255;
+            yHigh = uHigh = vHigh = 0;
+            for (int k = firstPoint.x(); k < lastPoint.x(); k++)
+            {
+                for (int l = firstPoint.y(); l < lastPoint.y(); l++)
+                {
+                    y = yuvImage.getY(k, l);
+                    u = yuvImage.getU(k, l);
+                    v = yuvImage.getV(k, l);
+                    if (y < yLow)
+                    {
+                        yLow = y;
+                    }
+                    if (u < uLow)
+                    {
+                        uLow = u;
+                    }
+                    if (v < vLow)
+                    {
+                        vLow = v;
+                    }
+                    if (y > yHigh)
+                    {
+                        yHigh = y;
+                    }
+                    if (u > uHigh)
+                    {
+                        uHigh = u;
+                    }
+                    if (v > vHigh)
+                    {
+                        vHigh = v;
+                    }
+                }
+            }
+            QTextStream out(stdout);
+            out << "Set Y Stuff value to " << yLow << " " << yHigh << "\n";
+            // we have defined a region in the space to make that color
+            for (y = yLow; y <= yHigh; y++)
+            {
+                for (u = uLow; u <= uHigh; u++)
+                {
+                    for (v = vLow; v <= vHigh; v++)
+                    {
+                        table->setColor(y, u, v, bitColor[currentColor]);
+                    }
+                }
+            }
+        }
+        else
+        {
+            for (int k = firstPoint.x(); k < lastPoint.x(); k++)
+            {
+                for (int l = firstPoint.y(); l < lastPoint.y(); l++)
+                {
+                    y = yuvImage.getY(k, l);
+                    u = yuvImage.getU(k, l);
+                    v = yuvImage.getV(k, l);
+                    table->unSetColor(y, u, v, bitColor[currentColor]);
+                }
+            }
+        }
+    }
+    firstPoint.setX(-1);
+    largeDisplay();
+}
+
 
 }
 }

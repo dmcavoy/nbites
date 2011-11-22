@@ -37,12 +37,13 @@
 
 #include "motionconfig.h" // for cmake set debugging flags like MOTION_DEBUG
 
+#include "MotionSwitchboardInterface.h"
+
 #include "Kinematics.h"
 #include "WalkProvider.h"
 #include "WalkingConstants.h"
 #include "ScriptedProvider.h"
 #include "HeadProvider.h"
-#include "CoordHeadProvider.h"
 #include "NullHeadProvider.h"
 #include "NullBodyProvider.h"
 #include "Sensors.h"
@@ -61,7 +62,7 @@
 #  define DEBUG_JOINTS_OUTPUT
 #endif
 
-class MotionSwitchboard {
+class MotionSwitchboard : public MotionSwitchboardInterface {
 public:
     MotionSwitchboard(boost::shared_ptr<Sensors> s,
             boost::shared_ptr<NaoPose> pose);
@@ -131,7 +132,6 @@ private:
     WalkProvider walkProvider;
     ScriptedProvider scriptedProvider;
     HeadProvider headProvider;
-    CoordHeadProvider coordHeadProvider;
     NullHeadProvider nullHeadProvider;
     NullBodyProvider nullBodyProvider;
 
@@ -150,10 +150,9 @@ private:
     bool running;
     bool shouldWalkPose;
     mutable bool newJoints; //Way to track if we ever use the same joints twice
+    mutable bool newInputJoints;
 
     bool readyToSend;
-
-    static const float sitDownAngles[Kinematics::NUM_BODY_JOINTS];
 
     pthread_t       switchboard_thread;
     pthread_cond_t  calc_new_joints_cond;

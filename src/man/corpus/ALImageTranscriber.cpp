@@ -1,6 +1,7 @@
 
 #include <stdio.h>
 #include <time.h>
+#include <assert.h>
 #include "alvision/alimage.h"
 #include "alvision/alvisiondefinitions.h"
 #include "altools/alxplatform.h"
@@ -11,7 +12,7 @@
 #include "corpusconfig.h"
 #include "ImageAcquisition.h"
 
-#include "vision/Profiler.h"
+#include "Profiler.h"
 
 #ifdef DEBUG_ALIMAGE
 #  define DEBUG_ALIMAGE_LOOP
@@ -37,14 +38,15 @@ const int ALImageTranscriber::DEFAULT_CAMERA_BUFFERSIZE = 16;
 // Gain: 26 / Exp: 83
 // Gain: 28 / Exp: 60
 // Gain: 35 / Exp: 40
+// Camera parameters go HERE, **NOT** in Camera.h
 const int ALImageTranscriber::DEFAULT_CAMERA_AUTO_GAIN = 0; // AUTO GAIN OFF
-const int ALImageTranscriber::DEFAULT_CAMERA_GAIN = 30;
+const int ALImageTranscriber::DEFAULT_CAMERA_GAIN = 28;
 const int ALImageTranscriber::DEFAULT_CAMERA_AUTO_WHITEBALANCE = 0; // AUTO WB OFF
-const int ALImageTranscriber::DEFAULT_CAMERA_BLUECHROMA = 113;
-const int ALImageTranscriber::DEFAULT_CAMERA_REDCHROMA = 60;
-const int ALImageTranscriber::DEFAULT_CAMERA_BRIGHTNESS = 154;
-const int ALImageTranscriber::DEFAULT_CAMERA_CONTRAST = 85;
-const int ALImageTranscriber::DEFAULT_CAMERA_SATURATION = 140;
+const int ALImageTranscriber::DEFAULT_CAMERA_BLUECHROMA = 133;
+const int ALImageTranscriber::DEFAULT_CAMERA_REDCHROMA = 64;
+const int ALImageTranscriber::DEFAULT_CAMERA_BRIGHTNESS = 130;
+const int ALImageTranscriber::DEFAULT_CAMERA_CONTRAST = 93;
+const int ALImageTranscriber::DEFAULT_CAMERA_SATURATION = 151;
 const int ALImageTranscriber::DEFAULT_CAMERA_HUE = 0;
 // Lens correction
 const int ALImageTranscriber::DEFAULT_CAMERA_LENSX = 0;
@@ -85,13 +87,11 @@ const int ALImageTranscriber::DEFAULT_CAMERA_HFLIP = 0;
 const int ALImageTranscriber::DEFAULT_CAMERA_VFLIP = 0;
 #endif
 
-ALImageTranscriber::ALImageTranscriber(shared_ptr<Synchro> synchro,
-                                       shared_ptr<Sensors> s,
+ALImageTranscriber::ALImageTranscriber(shared_ptr<Sensors> s,
                                        ALPtr<ALBroker> broker)
-    : ThreadedImageTranscriber(s,synchro,"ALImageTranscriber"),
+    : ThreadedImageTranscriber(s,"ALImageTranscriber"),
       log(), camera(), lem_name(""), camera_active(false),
       image(reinterpret_cast<uint16_t*>(new uint8_t[IMAGE_BYTE_SIZE])),
-      naoImage(new uint8_t[NAO_IMAGE_BYTE_SIZE]),
       table(new unsigned char[yLimit * uLimit * vLimit]),
       params(y0, u0, v0, y1, u1, v1, yLimit, uLimit, vLimit)
 {
@@ -102,7 +102,7 @@ ALImageTranscriber::ALImageTranscriber(shared_ptr<Synchro> synchro,
         // lowDebug, debug, lowInfo, info, warning, error, fatal
         log->setVerbosity("error");
     }catch (ALError &e) {
-        cerr << "Could not create a proxy to ALLogger module" << endl;
+        cout << "Could not create a proxy to ALLogger module" << endl;
     }
 
 #ifdef USE_VISION
@@ -137,9 +137,6 @@ int ALImageTranscriber::start()
 
 void ALImageTranscriber::run()
 {
-    Thread::running = true;
-    Thread::trigger->on();
-
     long long lastProcessTimeAvg = VISION_FRAME_LENGTH_uS;
 
     struct timespec interval, remainder;
@@ -147,7 +144,7 @@ void ALImageTranscriber::run()
         //start timer
         PROF_ENTER(P_MAIN);
         PROF_ENTER(P_GETIMAGE);
-        const long long startTime = process_micro_time();
+        const long long startTime = monotonic_micro_time();
 
         if (camera_active)
             waitForImage();
@@ -162,7 +159,7 @@ void ALImageTranscriber::run()
 #endif
 
         //stop timer
-        const long long processTime = process_micro_time() - startTime;
+        const long long processTime = monotonic_micro_time() - startTime;
         //sleep until next frame
 
         lastProcessTimeAvg = lastProcessTimeAvg/2 + processTime/2;
@@ -196,7 +193,6 @@ void ALImageTranscriber::run()
         PROF_EXIT(P_MAIN);
         PROF_NFRAME();
     }
-    Thread::trigger->off();
 }
 
 void ALImageTranscriber::stop()
@@ -557,9 +553,16 @@ void ALImageTranscriber::waitForImage ()
 
             sensors->lockImage();
 #ifdef CAN_SAVE_FRAMES
-            _copy_image(ALimage->getData(), naoImage);
-            ImageAcquisition::acquire_image_fast(table, params,
-                    	naoImage, image);
+            // we make a local of the nao image for logging purposes
+            if (sensors->getWriteableNaoImage() != NULL) {
+                _copy_image(ALimage->getData(), sensors->getWriteableNaoImage());
+                ImageAcquisition::acquire_image_fast(table, params,
+                                                     sensors->getNaoImage(), image);
+            } else {
+                ImageAcquisition::acquire_image_fast(table, params,
+                                                     ALimage->getData(), image);
+
+            }
 #else
             ImageAcquisition::acquire_image_fast(table, params,
                                                  ALimage->getData(), image);
@@ -625,7 +628,7 @@ void ALImageTranscriber::waitForImage ()
             sensors->lockImage();
             sensors->setImage(image);
 #ifdef CAN_SAVE_FRAMES
-            sensors->setNaoImage(naoImage);
+            sensors->notifyNewNaoImage();
 #endif
             sensors->releaseImage();
         }
