@@ -744,6 +744,7 @@ void Sensors::writeVarianceData() {
     varianceMonitor.LogOutput();
     fsrMonitor.LogOutput();
     ballVariance.LogOutput();
+    ballVariance.LogBallValues();
 
     variance_mutex.unlock();
 }
