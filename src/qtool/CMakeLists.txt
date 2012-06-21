@@ -20,22 +20,37 @@ add_definitions(${QT_DEFINITIONS})
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -m32")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -m32")
 
-########### Sources
+########### QTool Sources
 
 set( qtool_srcs main.cpp
+  EmptyQTool.cpp
   QTool.cpp
   )
 
 set(qtool_headers
-    QTool.h
+  EmptyQTool.h
+  QTool.h
 )
 
 #set(qtool_forms qtool.ui)
 
 #set(qtool_resources qtool.res)
 
+########### ConnectTool Sources
+
+set( connect_srcs connect_main.cpp
+  EmptyQTool.cpp
+  ConnectTool.cpp
+  )
+
+set( connect_headers
+  EmptyQTool.h
+  ConnectTool.h
+)
+
 include_directories(.
                     ${CMAKE_CURRENT_BINARY_DIR}
+                    ${CMAKE_CURRENT_BINARY_DIR}/overseer #for the GroundTruth.pb.h
                     ${PROTOBUF_INCLUDE_DIRS}
                     )
 
@@ -43,17 +58,22 @@ include_directories(.
 
 Qt4_wrap_cpp(qtool_headers_moc ${qtool_headers})
 Qt4_wrap_ui(qtool_forms_headers ${qtool_forms})
+
 #### resources example
 #Qr4_add_resources(qtool_resources_rcc ${qtool_resources})
 
+Qt4_wrap_cpp(connect_headers_moc ${connect_headers})
 
 ######### Subdirectory compilation
 add_subdirectory( image )
 add_subdirectory( colorcreator )
 add_subdirectory( data )
 add_subdirectory( viewer )
+add_subdirectory( offline )
+add_subdirectory( remote )
+add_subdirectory( overseer )
 
-######### The executable
+######### The main QTool executable
 
 add_executable(qtool
   ${qtool_srcs}
@@ -66,9 +86,25 @@ target_link_libraries(
   image
   data
   viewer
+  vision_viewer
+  offline
+  remote
+  overseer_client
   ${QT_LIBRARIES}
   )
 
-set_property(
-  TARGET qtool
-  APPEND PROPERTY COMPILE_DEFINITIONS NBITES_DIR=${NBITES_DIR} )
+########## ConnectTool executable
+
+add_executable( connect_tool
+  ${connect_srcs}
+  ${connect_headers_moc} )
+
+target_link_libraries(
+  connect_tool
+  image
+  data
+  viewer
+  remote
+  overseer_client
+  ${QT_LIBRARIES}
+  )

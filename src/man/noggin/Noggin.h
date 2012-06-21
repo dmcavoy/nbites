@@ -1,4 +1,3 @@
-
 #ifndef _Noggin_h_DEFINED
 #define _Noggin_h_DEFINED
 
@@ -17,6 +16,11 @@
 #include "memory/log/LoggingBoard.h"
 #include "memory/log/PyLoggingBoard.h"
 
+#include "ParticleFilter.h"
+#include "MotionSystem.h"
+#include "VisionSystem.h"
+#include "FieldConstants.h"
+
 //#define LOG_LOCALIZATION
 
 /**
@@ -32,7 +36,8 @@ public:
            boost::shared_ptr<Comm> c, boost::shared_ptr<RoboGuardian> rbg,
            boost::shared_ptr<Sensors> _sensors,
            boost::shared_ptr<man::memory::log::LoggingBoard> loggingBoard,
-           MotionInterface * _minterface
+           MotionInterface * _minterface,
+           man::memory::Memory::ptr Memory
            );
     virtual ~Noggin();
 
@@ -64,22 +69,41 @@ private:
     //Process button  clicks that pertain to GameController manipulation
     void processGCButtonClicks();
 
+    void updateRobotFallenState(bool fallen)
+    {
+	if(!fallenState && fallen)
+	{
+	    std::cout << "Noggin: Entering fallen state!" << std::endl;
+	    fallenState = true;
+	    locMotionSystem->setFallen(true);
+	}
+	else if(fallenState && !fallen)
+	    fallenState = false;
+    }
+
 private:
     boost::shared_ptr<Vision> vision;
     boost::shared_ptr<Comm> comm;
     boost::shared_ptr<GameController> gc;
     boost::shared_ptr<Sensors> sensors;
-    boost::shared_ptr<man::memory::log::LoggingBoard> loggingBoard;
+    boost::shared_ptr<RoboGuardian> guard;
+    man::memory::log::LoggingBoard::ptr loggingBoard;
+    man::memory::Memory::ptr memory;
+
 
     boost::shared_ptr<ClickableButton> chestButton;
     boost::shared_ptr<ClickableButton> leftFootButton;
     boost::shared_ptr<ClickableButton> rightFootButton;
+
+    boost::shared_ptr<MotionSystem> locMotionSystem;
+    boost::shared_ptr<VisionSystem> locVisionSystem;
 
     bool error_state;
     PyObject *module_helper;
     PyObject *brain_module;
     PyObject *brain_instance;
     MotionInterface * motion_interface;
+    bool fallenState;
 
     // GC stuff
     bool registeredGCReset;

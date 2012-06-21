@@ -2,12 +2,9 @@
  *
  * @LoggingBoard - a class that will handle all of the logging objects for each
  * of the memory object
- * e.g. MVision can have a ZeroCopyFileLogger, whereas
- * MSensors can have a CodedFileLogger
+ * Each item could potentially have a different logger (a threaded one, a gzip one, etc.)
  *
- * Also each logger depends on a FDProvider (that is a file descriptor
- * provider) to provide the file descriptor necessary. Some stuff
- * might go to a file, some might go to wifi, etc.
+ * Also each logger depends on a OutProvider (which provides a means to write to some output)
  *
  * @author Octavian Neamtu
  */
@@ -17,43 +14,51 @@
 #include <map>
 #include <string>
 
-#include "include/io/FileFDProvider.h"
+#include "include/io/OutProvider.h"
+#include "ClassHelper.h"
 
-#include "MObjectLogger.h"
-#include "memory/MObject.h"
+#include "MessageLogger.h"
 #include "memory/Memory.h"
-#include "memory/MemoryIOBoard.h"
 
 namespace man {
 namespace memory {
 namespace log {
 
-class LoggingBoard : public MemoryIOBoard<MObjectLogger> ,
-                     public Subscriber<MObject_ID> {
+class LoggingBoard {
 
-public:
-    LoggingBoard(Memory::const_ptr memory,
-                IOProvider::const_ptr ioProvider = IOProvider::NullBulkIO());
-    virtual ~LoggingBoard() {}
-
-    void log(MObject_ID id);
-
-    void newIOProvider(IOProvider::const_ptr ioProvider);
-    void update(MObject_ID id);
-
-    void startLogging();
-    void stopLogging();
-    bool isLogging() { return logging; }
+	ADD_SHARED_PTR(LoggingBoard)
 
 protected:
-    //returns a NULL pointer if such a logger doesn't exist
-    MObjectLogger::const_ptr getLogger(MObject_ID id) const;
-    //returns a NULL pointer if such a logger doesn't exist
-    MObjectLogger::ptr getMutableLogger(MObject_ID id);
+	typedef common::io::OutProvider OutProvider;
+	typedef std::pair<std::string, MessageLogger::ptr > ObjectIOPair;
+	typedef std::map<std::string, MessageLogger::ptr > ObjectIOMap;
+
+public:
+	LoggingBoard(Memory::const_ptr memory);
+	virtual ~LoggingBoard() {
+	}
+
+	void newOutputProvider(OutProvider::ptr outProvider, std::string name);
+
+	void startLogging();
+	void stopLogging();
+	bool isLogging() {
+		return logging;
+	}
+
+	void reset();
+	void setMemory(Memory::const_ptr mem) { memory = mem; }
+
+protected:
+	//returns a NULL pointer if such a logger doesn't exist
+	MessageLogger::const_ptr getLogger(std::string name) const;
+	//returns a NULL pointer if such a logger doesn't exist
+	MessageLogger::ptr getMutableLogger(std::string name);
 
 private:
-    Memory::const_ptr memory;
-    bool logging;
+	Memory::const_ptr memory;
+	bool logging;
+	ObjectIOMap objectIOMap;
 };
 }
 }

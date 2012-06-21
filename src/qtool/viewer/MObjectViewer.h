@@ -14,29 +14,38 @@
 
 #include <boost/shared_ptr.hpp>
 #include <QTreeView>
-#include "data/DataTypes.h"
+
+#include "data/Typedefs.h"
+
 #include "man/memory/Memory.h"
+#include "man/memory/MemoryCommon.h"
 #include "data/treemodel/TreeModel.h"
 
 namespace qtool {
 namespace viewer {
 
-class MObjectViewer : public QTreeView, public Subscriber<data::MObject_ID> {
+class MObjectViewer : public QTreeView {
 
     Q_OBJECT
 public:
-    MObjectViewer(boost::shared_ptr<const man::memory::ProtoMessage> messageViewed,
-                QWidget* parent = 0);
+    MObjectViewer(common::io::ProtobufMessage::const_ptr protoMessage,
+                  QWidget* parent = 0);
     virtual ~MObjectViewer();
 
-    void update(data::MObject_ID);
+public slots:
+    void updateView();
+
+protected:
+    void showEvent(QShowEvent* event);
+    void paintEvent(QPaintEvent*);
 
 private:
     void createNewTreeModel();
 
 private:
-    boost::shared_ptr<const man::memory::ProtoMessage> messageViewed;
+    common::io::ProtobufMessage::const_ptr messageViewed;
     data::treemodel::TreeModel* treeModel;
+    bool shouldRedraw;
 
 };
 

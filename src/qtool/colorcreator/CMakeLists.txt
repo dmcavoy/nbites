@@ -14,17 +14,22 @@ add_definitions(${QT_DEFINITIONS})
 ########### Sources
 
 set( ColorCreator_srcs
-  ColorCreator.cpp
-  ColorZone.cpp
+  ColorCalibrate.cpp
   ColorEdit.cpp
   ColorTable.cpp
-  Stats.cpp )
+  ColorSpaceWidget.cpp
+  ColorWheel.cpp
+  Stats.cpp
+  ColorTableCreator.cpp)
 
-set(ColorCreator_headers ColorCreator.h
+set(ColorCreator_headers
+	ColorCalibrate.h
     ColorEdit.h
+    ColorSpaceWidget.h
+    ColorSpace.h
+    ColorWheel.h
+    ColorTableCreator.h
 )
-
-set(ColorCreator_forms ColorCreator.ui)
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
@@ -44,4 +49,6 @@ target_link_libraries(
   colorcreator
   data
   ${QT_LIBRARIES}
+  man
+
   )

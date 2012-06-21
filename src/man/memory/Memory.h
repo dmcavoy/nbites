@@ -1,21 +1,25 @@
 /**
- * Memory.h
- *
  * @class Memory
  *
  * This class keeps instances of all the different memory objects and provides
- * an interface through which they get updated (each memory object pulls data
- * from its corresponding object
+ * an interface through which they get updated (each memory object copies data
+ * from its corresponding man object)
+ *
+ * Each MObject is associated with a string that identifies it; this string
+ * is usually the class name
+ *
+ * Memory is more or less a glorified ProtobufMessage map
  *
  * Future work: we will be able to keep multiple instances of selected objects
  *
- *      Author: Octavian Neamtu
+ * @author Octavian Neamtu
  */
 
 #pragma once
 
 #include <boost/shared_ptr.hpp>
 #include <map>
+#include <exception>
 
 namespace man {
 namespace memory {
@@ -23,63 +27,104 @@ class Memory; //forward declaration
 }
 }
 
-#include "MObject.h"
-#include "MVision.h"
-#include "Vision.h"
-#include "MVisionSensors.h"
-#include "MMotionSensors.h"
-#include "MImage.h"
-#include "Sensors.h"
-#include "Profiler.h"
-#include "include/MultiProvider.h"
+#include "ClassHelper.h"
+#include "io/ProtobufMessage.h"
 
 namespace man {
 namespace memory {
 
-class Memory : public Subscriber<SensorsEvent>,
-               public MultiProvider<MObject_ID> {
+/**
+ * Meant to be thrown when one tries to get an object that is not included
+ * in memory (or at least the memory object map)
+ *      - Octavian
+ */
+class NonExistentMemoryObjectError : public std::exception {
 
 public:
-    typedef boost::shared_ptr<Memory> ptr;
-    typedef boost::shared_ptr<const Memory> const_ptr;
-    typedef std::pair<MObject_ID,
-            boost::shared_ptr<MObject> > MObject_IDPair;
-    typedef std::map<MObject_ID,
-            boost::shared_ptr<MObject> > MObject_IDMap;
+    NonExistentMemoryObjectError(std::string class_name) : class_name(class_name) {}
+    virtual ~NonExistentMemoryObjectError() throw() {}
 
-public:
-    Memory( boost::shared_ptr<Vision> vision_ptr = boost::shared_ptr<Vision>(),
-            boost::shared_ptr<Sensors> sensors_ptr = boost::shared_ptr<Sensors>());
-    virtual ~Memory();
-    /**
-     * calls the update function on @obj
-     * this will usually make the MObject pull data
-     * from its corresponding man object and maybe log it
-     */
-    void update(boost::shared_ptr<MObject> obj);
-    void updateVision();
-
-    /**
-     * This function is called whenever one of the Providers we are subscribed
-     * to has something new/updated
-     */
-    void update(SensorsEvent eventID);
-
-public:
-    const MVision* getMVision() const {return mVision.get();}
-    const MVisionSensors* getMVisionSensors() const {return mVisionSensors.get();}
-    const MMotionSensors* getMMotionSensors() const {return mMotionSensors.get();}
-    MImage::const_ptr getMImage() const {return mImage;}
-
-    MObject::const_ptr getMObject(MObject_ID id) const;
-    MObject::ptr getMutableMObject(MObject_ID id);
+    virtual const char* what() const throw () {
+        return ("Couldn't find " + class_name).c_str();
+    }
 
 private:
-    MObject_IDMap mobject_IDMap;
-    boost::shared_ptr<MVision> mVision;
-    boost::shared_ptr<MVisionSensors> mVisionSensors;
-    boost::shared_ptr<MMotionSensors> mMotionSensors;
-    boost::shared_ptr<MImage> mImage;
+        std::string class_name;
+
 };
+
+class Memory {
+
+    typedef common::io::ProtobufMessage Object;
+
+public:
+    ADD_SHARED_PTR(Memory)
+
+    typedef std::pair<std::string, boost::shared_ptr<Object> > MObject_IDPair;
+    typedef std::map<std::string, boost::shared_ptr<Object> > MObject_IDMap;
+
+    typedef MObject_IDMap::iterator iterator;
+    typedef MObject_IDMap::const_iterator const_iterator;
+
+public:
+    Memory() {}
+    virtual ~Memory() {}
+
+public:
+    const_iterator begin() const { return mobject_IDMap.begin(); }
+    const_iterator end() const { return mobject_IDMap.end(); }
+
+    void subscribe(Subscriber* subscriber, std::string name) const throw(NonExistentMemoryObjectError) {
+        this->getByName(name)->addSubscriber(subscriber);
+    }
+
+    void unsubscribe(Subscriber* subscriber, std::string name) const throw(NonExistentMemoryObjectError) {
+        this->getByName(name)->unsubscribe(subscriber);
+    }
+
+    //templated getters - generally pretty awesome
+    template<class T>
+    boost::shared_ptr<const T> get() const throw(NonExistentMemoryObjectError) {
+        return boost::dynamic_pointer_cast<const T>(this->getByName(class_name<T>()));
+    }
+
+    template<class T>
+    boost::shared_ptr<T> get() throw(NonExistentMemoryObjectError) {
+        return boost::dynamic_pointer_cast<T>(this->getByName(class_name<T>()));
+    }
+
+    Object::const_ptr getByName(std::string name) const throw(NonExistentMemoryObjectError) {
+        MObject_IDMap::const_iterator it = mobject_IDMap.find(name);
+
+        if (it != mobject_IDMap.end()) {
+            return it->second;
+        } else {
+            throw NonExistentMemoryObjectError(name);
+        }
+    }
+
+    Object::ptr getByName(std::string name) throw(NonExistentMemoryObjectError) {
+        MObject_IDMap::iterator it = mobject_IDMap.find(name);
+
+        if (it != mobject_IDMap.end()) {
+            return it->second;
+        } else {
+            throw NonExistentMemoryObjectError(name);
+        }
+    }
+
+    template<class T>
+    void addObject() {
+        boost::shared_ptr<T> object(new T);
+        mobject_IDMap.insert(MObject_IDPair(object->getName(), object));
+    }
+
+    int numObjects() const { return mobject_IDMap.size(); }
+
+protected:
+    MObject_IDMap mobject_IDMap;
+};
+
+
 }
 }

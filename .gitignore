@@ -39,6 +39,7 @@ noggin/util/fakeData/*
 /noggin/offline/faker
 /noggin/offline/fakerData/*
 /util/GameController/GameController.log
+*.geometry
 *~
 docs/*
 *.wav
@@ -49,3 +50,5 @@ src/remote/dist/javadoc/
 ext/*
 lib/*
 /util/scripts/nbites.bash
+/.metadata
+

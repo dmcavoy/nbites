@@ -9,59 +9,65 @@ namespace parse {
 
 using boost::shared_ptr;
 using namespace std;
+using namespace common::io;
 
-ParsingBoard::ParsingBoard(Memory::ptr memory,
-        IOProvider::const_ptr ioProvider) :
+ParsingBoard::ParsingBoard(Memory::ptr memory) :
     memory(memory) {
-    this->newIOProvider(ioProvider);
 }
 
 ParsingBoard::~ParsingBoard(){}
 
-//TODO: this could be moved to MemoryIOBoard, since it's very similar to
-// the LoggingBoard method
-void ParsingBoard::newIOProvider(IOProvider::const_ptr ioProvider) {
-    objectIOMap.clear();
+void ParsingBoard::newInputProvider(InProvider::ptr inProvider, std::string name) {
 
-    const IOProvider::FDProviderMap* fdmap = ioProvider->getMap();
-    for (IOProvider::FDProviderMap::const_iterator i = fdmap->begin();
-            i!= fdmap->end(); i++) {
-        MObject::ptr mobject =
-                memory->getMutableMObject(i->first);
-
-        if (mobject != MObject::ptr()) {
-            objectIOMap[i->first] = Parser::ptr(
-                    new MObjectParser(i->second, mobject));
-        } else {
-            std::cout<<"Could not read valid log ID from file descriptor: "
-                    << "log ID: " << i->first << " "
-                    << i->second->debugInfo() << std::endl;
+    if (name == "find_it_out") {
+        //warning - if target is a socket, then this might block (potentially
+        //forever)
+        //TODO: find some way around that (the tricky part is that we use
+        // the id we get from reading the log to identify what memory object
+        // it's going to be parsed to, so we need to wait on the open is some
+        // way)
+        try {
+            inProvider->openCommunicationChannel();
+            MessageHeader header = inProvider->peekAndGet<MessageHeader>();
+            name = std::string(header.name);
+        } catch (std::exception& e) {
+            cerr << e.what() << endl;
+            return ;
         }
+    }
+
+    try {
+        ProtobufMessage::ptr object = memory->getByName(name);
+        MessageParser::ptr mObjectParser(new MessageParser(inProvider, object));
+        objectIOMap[name] = mObjectParser;
+        mObjectParser->start();
+    } catch(std::exception& e) {
+        cerr << e.what() << endl;
+        return ;
     }
 }
 
-void ParsingBoard::parse(MObject_ID id) {
+void ParsingBoard::parseNext(std::string name) {
 
-    ObjectIOMap::iterator it = objectIOMap.find(id);
+    ObjectIOMap::iterator it = objectIOMap.find(name);
     // if this is true, then we found a legitimate parser
     // corresponding to our mobject in the map
     if (it != objectIOMap.end()) {
-        //it->second is the parser associated with the specified mobject
-        it->second->getNext();
+        it->second->signalToParseNext();
     }
 }
 
-void ParsingBoard::parseAll() {
+void ParsingBoard::parseNextAll() {
     for (ObjectIOMap::iterator it = objectIOMap.begin();
             it != objectIOMap.end(); it++ ) {
-        it->second->getNext();
+        it->second->signalToParseNext();
     }
 
 }
 
-void ParsingBoard::rewind(MObject_ID id) {
+void ParsingBoard::rewind(std::string name) {
 
-    ObjectIOMap::iterator it = objectIOMap.find(id);
+    ObjectIOMap::iterator it = objectIOMap.find(name);
     // if this is true, then we found a legitimate parser
     // corresponding to our mobject in the map
     if (it != objectIOMap.end()) {

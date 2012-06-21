@@ -1,7 +1,9 @@
 /**
  * @class DataLoader
  *
- * A class that maintains a UI to select a DataSource
+ * A class that combines an offlineDataFinder for browsing for logs offline and
+ * a remoteDataFinder for streaming from the robots in a single widget and
+ * also connects these widgets up to the dataManager
  *
  * @author Octavian Neamtu <oneamtu89@gmail.com>
  */
@@ -11,9 +13,10 @@
 #include <QWidget>
 #include <QtGui>
 
-#include "OfflineDataFinder.h"
+#include "remote/RemoteDataFinder.h"
+#include "data/OfflineDataFinder.h"
 #include "DataManager.h"
-#include "DataSource.h"
+#include "io/InProvider.h"
 
 namespace qtool {
 namespace data {
@@ -23,18 +26,13 @@ class DataLoader : public QWidget
     Q_OBJECT
 
 public:
-    DataLoader(DataManager::ptr dataManager ,QWidget *parent = 0);
+    DataLoader(DataManager::ptr dataManager, QWidget *parent = 0);
     ~DataLoader();
 
 private:
-    QComboBox* setupDataSelectorBox();
-
-private slots:
-    void newDataSource(DataSource::ptr dataSource);
-
-private:
     DataManager::ptr dataManager;
-    DataFinder* dataFinder;
+    OfflineDataFinder* offlineDataFinder;
+    remote::RemoteDataFinder* remoteDataFinder;
 };
 
 }

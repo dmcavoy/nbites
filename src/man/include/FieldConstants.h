@@ -2,9 +2,10 @@
 #define FieldConstantsDefined__h
 
 #include <cmath>
+#ifndef NO_MANCONFIG
 #include "Common.h"
 #include "manconfig.h"
-
+#endif
 // Nao field constants
 
 #ifdef USING_LAB_FIELD
@@ -129,5 +130,13 @@ static const float BOTTOM_CC_Y = CENTER_FIELD_Y - CENTER_CIRCLE_RADIUS;
 static const float BOTTOM_CC_X = CENTER_FIELD_X;
 
 static const float LINE_CROSS_LENGTH = 10.0f; // length of each cross in cm
+
+// Constants for heading
+//  Right is towards opponents' goal.
+//  Left is towards own goal.
+static const float HEADING_RIGHT = 0;
+static const float HEADING_UP = 90;
+static const float HEADING_LEFT = 180;
+static const float HEADING_DOWN = -90;
 
 #endif // File

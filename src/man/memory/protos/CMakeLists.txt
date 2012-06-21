@@ -22,6 +22,12 @@ include_directories( ${PROTOBUF_INCLUDE_DIR}/
 file(GLOB PROTO_INPUT
   RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
   "*.proto")
+set(PROTO_INPUT Sensors.proto
+                 Vision.proto
+                 Loc.proto
+                 Common.proto
+                 Ball.proto
+                 Motion.proto)
 
 #protobuf compiler
 set(PROTOC_C_OUT_FLAG --cpp_out)

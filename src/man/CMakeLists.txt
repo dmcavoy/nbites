@@ -22,6 +22,7 @@
 PROJECT( MAN )
 CMAKE_MINIMUM_REQUIRED( VERSION 2.6.0 )
 
+ENABLE_TESTING()
 
 ############################ BASE DEFINITIONS
 # Include  the basic definitions accross all projects
@@ -91,7 +92,7 @@ SET( REMOTE_ADDRESS ${@REMOTE_ADDRESS@} )
 # Define this to remotely install the binary or library on the robot.
 # Cannot be selected unless OE_CROSS_BUILD is set to ON.
 SET( @ROBOT_NAME@
-  "spock"
+  "river"
   CACHE STRING
   "The NAME of the robot"
   )
@@ -100,11 +101,19 @@ SET( ROBOT_NAME ${@ROBOT_NAME@} )
 
 ############################ COLOR TABLE SELECTION
 # Set the path to the color table you wish to be loaded into install/etc
-SET( COLOR_TABLE
-  "../../data/tables/lab120/lab120-11.mtb"
+SET( @TABLE_TOP@
+  "../../data/tables/mexico-c-top.mtb"
   CACHE STRING
-  "Path relative to man directory for the desired color table"
+  "Path relative to man directory for the desired top camera color table"
   )
+SET( TABLE_TOP ${@TABLE_TOP@})
+
+SET( @TABLE_BOTTOM@
+  "../../data/tables/mexico-c-bottom.mtb"
+  CACHE STRING
+  "Path relative to man directory for the desired bottom camera color table"
+  )
+SET( TABLE_BOTTOM ${@TABLE_BOTTOM@})
 
 #upload.sh needs to get generated after REMOTE and OFFLINE stuff is set
 CONFIGURE_FILE(
@@ -124,14 +133,6 @@ IF ( NOT USE_ALSPEECH )
 ELSE()
   SET( USE_ALSPEECH_POUND "" )
 ENDIF()
-
-SET( AUTOLOAD_INI ${CFG_DIR}/autoload.ini )
-
-CONFIGURE_FILE(
-  ${MAN_CMAKE_DIR}/autoload.ini.in
-  ${CFG_DIR}/autoload.ini
-  ESCAPE_QUOTES
-  )
 
 ############################ DEFINITIONS
 # Add here definition needed.
@@ -153,6 +154,7 @@ INCLUDE_DIRECTORIES(
   ${COMM_INCLUDE_DIR}
   ${CORPUS_INCLUDE_DIR}
   ${MOTION_INCLUDE_DIR}
+  ${BHWALK_INCLUDE_DIR}
   ${NOGGIN_INCLUDE_DIR}
   ${VISION_INCLUDE_DIR}
   ${WEBOTS_INCLUDE_DIR}
@@ -161,11 +163,22 @@ INCLUDE_DIRECTORIES(
   ${CFG_DIR}
   )
 
+############################ Platform settings
+
+IF(BUILDING_FOR_A_REMOTE_NAO)
+  SET( MAN_LOADER_SRC NaoManLoader )
+  LIST(APPEND MAN_PRELOADER_SRCS NaoManPreloader )
+ENDIF()
+IF(OFFLINE)
+  SET( MAN_LOADER_SRC OfflineManLoader )
+  LIST(APPEND MAN_PRELOADER_SRCS OfflineManPreloader )
+ENDIF()
+
 ############################ Setting up Man
 SET( MAN_SRCS Man
               TMan
               TTMan
-              NaoManLoader )
+              ${MAN_LOADER_SRC} )
 
 IF(WEBOTS_BACKEND)
 #NOTE: this doesn't work anymore because we changed the way we
@@ -198,12 +211,6 @@ TARGET_LINK_LIBRARIES(
 
 ############################## Setting up Man Preloader
 
-IF(BUILDING_FOR_A_REMOTE_NAO)
-  SET(MAN_PRELOADER_SRCS NaoManPreloader)
-ELSE()
-  SET(MAN_PRELOADER_SRCS FakeManPreloader)
-ENDIF()
-
 ADD_LIBRARY(
   ${MAN_PRELOADER_TARGET}
   SHARED
@@ -215,7 +222,7 @@ ADD_LIBRARY(
 INSTALL(
   TARGETS ${MAN_PRELOADER_TARGET}
   RUNTIME DESTINATION ${OUTPUT_ROOT_DIR_BIN}
-  LIBRARY DESTINATION ${OUTPUT_ROOT_DIR_NAOQI_LIB}
+  LIBRARY DESTINATION ${OUTPUT_ROOT_DIR_LIB}
   CONFIGURATIONS "" Debug Release
   )
 INSTALL(
@@ -227,11 +234,6 @@ INSTALL(
 INSTALL(
   FILES ${MAN_PYTHON_SRCS}
   DESTINATION ${MAN_PYTHON_TARGET_DIR}
-  CONFIGURATIONS "" Debug Release
-  )
-INSTALL(
-  FILES ${AUTOLOAD_INI}
-  DESTINATION ${OUTPUT_ROOT_DIR_PREF}
   CONFIGURATIONS "" Debug Release
   )
 

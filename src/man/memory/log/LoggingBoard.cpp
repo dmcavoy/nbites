@@ -2,75 +2,64 @@
 #include "NaoPaths.h"
 
 #include <cstdio>
+#include <iostream>
 
 namespace man {
 namespace memory {
 namespace log {
 
-using namespace man::include::paths;
 using boost::shared_ptr;
+using namespace common::io;
+using namespace std;
 
-LoggingBoard::LoggingBoard(Memory::const_ptr memory, IOProvider::const_ptr ioProvider) :
+LoggingBoard::LoggingBoard(Memory::const_ptr memory) :
     memory(memory), logging(true) {
-    newIOProvider(ioProvider);
 }
 
-void LoggingBoard::newIOProvider(IOProvider::const_ptr ioProvider) {
+void LoggingBoard::newOutputProvider(OutProvider::ptr outProvider, std::string name) {
 
-    this->ioProvider = ioProvider;
+    try {
+        ProtobufMessage::const_ptr object = memory->getByName(name);
+        MessageLogger::ptr logger(new MessageLogger(outProvider, object));
+        objectIOMap[name] = logger;
+        memory->subscribe(logger.get(), name);
+        //start the logging thread
+        logger->start();
 
-    const IOProvider::FDProviderMap* fdmap = ioProvider->getMap();
-    for (IOProvider::FDProviderMap::const_iterator i = fdmap->begin();
-            i!= fdmap->end(); i++) {
-
-        MObject::const_ptr mobject =
-                memory->getMObject(i->first);
-        if (mobject != MObject::const_ptr()) {
-            objectIOMap[i->first] = MObjectLogger::ptr(
-                    new MObjectLogger(i->second,
-                                      static_cast<int> (i->first), mobject));
-            objectIOMap[i->first]->start();
-        } else {
-            std::cout<<"Invalid Object ID passed for logging: "
-                    << "log ID: " << i->first << " "
-                    << i->second->debugInfo() << std::endl;
-        }
+    } catch (std::exception& e) {
+        cerr << e.what() << endl;
+        return ;
     }
 }
 
-void LoggingBoard::update(MObject_ID id) {
-    this->log(id);
-}
-
-void LoggingBoard::log(MObject_ID id) {
-    if (logging) {
-        MObjectLogger::ptr logger = getMutableLogger(id);
-        if (logger.get() != NULL) {
-            logger->signalToLog();
-        }
-    }
-}
-
-MObjectLogger::const_ptr LoggingBoard::getLogger(MObject_ID id) const {
-    ObjectIOMap::const_iterator it = objectIOMap.find(id);
+MessageLogger::const_ptr LoggingBoard::getLogger(std::string name) const {
+    ObjectIOMap::const_iterator it = objectIOMap.find(name);
     // if this is true, then we found a legitimate logger
     // corresponding to our mobject in the map
     if (it != objectIOMap.end()) {
         return it->second;
     } else {
-        return MObjectLogger::const_ptr();
+        return MessageLogger::const_ptr();
     }
 }
 
-MObjectLogger::ptr LoggingBoard::getMutableLogger(MObject_ID id) {
-    ObjectIOMap::iterator it = objectIOMap.find(id);
+MessageLogger::ptr LoggingBoard::getMutableLogger(std::string name) {
+    ObjectIOMap::iterator it = objectIOMap.find(name);
     // if this is true, then we found a legitimate logger
     // corresponding to our mobject in the map
     if (it != objectIOMap.end()) {
         return it->second;
     } else {
-        return MObjectLogger::ptr();
+        return MessageLogger::ptr();
     }
+}
+
+void LoggingBoard::reset() {
+    ObjectIOMap::iterator it;
+    for (it = objectIOMap.begin(); it != objectIOMap.end(); it++) {
+        memory->unsubscribe(it->second.get(), it->first);
+    }
+    objectIOMap.clear();
 }
 
 void LoggingBoard::startLogging() {

@@ -12,43 +12,42 @@
 
 #include <map>
 
-#include "include/io/BulkIO.h"
-#include "MObjectParser.h"
-#include "memory/MObject.h"
-
-//forward declaration
-namespace man {
-namespace memory {
-namespace parse {
-class ParsingBoard;
-}
-}
-}
+#include "io/InProvider.h"
+#include "MessageParser.h"
 
 #include "memory/Memory.h"
-#include "memory/MemoryIOBoard.h"
+#include "memory/MemoryCommon.h"
 
 namespace man {
 namespace memory {
 namespace parse {
 
-class ParsingBoard : public MemoryIOBoard<Parser> {
+class ParsingBoard {
+
+	typedef common::io::InProvider InProvider;
+	typedef std::pair< std::string, MessageParser::ptr > ObjectIOPair;
+	typedef std::map< std::string, MessageParser::ptr > ObjectIOMap;
 
 public:
-    ParsingBoard(Memory::ptr memory,
-            IOProvider::const_ptr ioProvider = IOProvider::NullBulkIO());
+    ParsingBoard(Memory::ptr memory);
     virtual ~ParsingBoard();
 
-    void newIOProvider(IOProvider::const_ptr ioProvider);
+    // warning: this function may block in trying to find out the MObject_ID
+    // associated with this input if the name is "find_it_out"
+    void newInputProvider(common::io::InProvider::ptr inProvider,
+                          std::string name = "find_it_out");
 
-    void parse(MObject_ID id);
-    void parseAll();
+    void parseNext(std::string name);
+    void parseNextAll();
 
-    void rewind(MObject_ID id);
+    void rewind(std::string name);
     void rewindAll();
+
+    void reset() { objectIOMap.clear(); }
 
 private:
     Memory::ptr memory;
+    ObjectIOMap objectIOMap;
 };
 }
 }

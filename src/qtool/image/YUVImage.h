@@ -4,49 +4,66 @@
 /**
  * @class YUVImage
  *
- * Takes a robo image and splits it into 3 component images for each of the
+ * Takes a raw image YUV422 and splits it into 3 component images for each of the
  * three channels.
- * One instance of this class should rely on one instance of a roboImage.
- * Once the image data in the roboImage gets updated, make sure to update this
- * class as well by using updateFromRoboImage().
+ * One instance of this class should rely on one instance of a rawImage.
+ * Once the image data in the rawImage gets updated, make sure to update this
+ * class as well by using the updateFromRawImage()
  *
- * This could be extended by adding in a listener to some data manager that will
- * push updates to the roboImage.
+ * Improvements : make this class actively "listen" for changes in the rawImage
+ * (one could use signals and slots) and update the yuv image members accordingly
+ *
+ *
+ * @author Octavian Neamtu
  */
 
 #include <string>
 
 #include <QGraphicsItem>
 #include <QColor>
-#include "ColorSpace.h"
-#include "man/memory/MImage.h"
+#include "man/memory/MObjects.h"
+
+#include "man/corpus/Camera.h"
+
+#include "data/Typedefs.h"
 
 class YUVImage
 {
 
 public:
-    YUVImage(man::memory::MImage::const_ptr rawImage);
+    YUVImage(qtool::memory::MRawImages::const_ptr rawImages,
+             man::corpus::Camera::Type which);
     virtual ~YUVImage();
     virtual void updateFromRawImage();
     void read(QString filename);
-    void read(std::string s);
+    void read(const byte* data);
+
     unsigned int getWidth() const { return width;}
     unsigned int getHeight() const { return height;}
-    int** getYImage() const { return yImg;}
-    int** getUImage() const { return uImg;}
-    int** getVImage() const { return vImg;}
-    bool areWithinImage(int x, int y) const;
-    int getY(int x, int y) const;
-    int getU(int x, int y) const;
-    int getV(int x, int y) const;
-    int getRed(int x, int y) const;
-    int getGreen(int x, int y) const;
-    int getBlue(int x, int y) const;
-    int getH(int x, int y) const;
-    int getS(int x, int y) const;
-    int getZ(int x, int y) const;
+    const byte** getYImage() const { return (const byte**) yImg;}
+    const byte** getUImage() const { return (const byte**) uImg;}
+    const byte** getVImage() const { return (const byte**) vImg;}
 
-protected:
+    bool areWithinImage(int x, int y) const {
+        return 0 <= x && x < getWidth() && 0 <= y && y < getHeight();
+    }
+
+    //Warning - do not use these in any mass assignment or mass
+    //access - you're much better off getting the image pointers
+    //and using those - Octavian
+    byte getY(int x, int y) const {
+        assert(areWithinImage(x, y));
+        return yImg[x][y];
+    }
+    byte getU(int x, int y) const {
+        assert(areWithinImage(x, y));
+        return uImg[x][y];
+    }
+    byte getV(int x, int y) const {
+        assert(areWithinImage(x, y));
+        return vImg[x][y];
+    }
+
     bool rawImageDimensionsEnlarged();
 
 private:
@@ -57,13 +74,14 @@ private:
 
 
 protected:
-    man::memory::MImage::const_ptr rawImage;
+    qtool::memory::MRawImages::const_ptr rawImages;
+    man::corpus::Camera::Type which;
 
     unsigned int width;
     unsigned int height;
 
-    int** yImg;
-    int** uImg;
-    int** vImg;
+    byte** yImg;
+    byte** uImg;
+    byte** vImg;
 };
 #endif // YUVImage_H

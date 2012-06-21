@@ -27,16 +27,21 @@
 #include <stdint.h>
 #include <boost/shared_ptr.hpp>
 
+#include "ClassHelper.h"
+
 #include "SensorDef.h"
 #include "SensorConfigs.h"
 #include "VisionDef.h"
-#include "Provider.h"
+#include "Camera.h"
+#include "Notifier.h"
 #include "Speech.h"
 #include "BulkMonitor.h"
 #include "BallMonitor.h"
 #include "include/synchro/mutex.h"
 #include "Kinematics.h"
-#include "memory/RoboImage.h"
+
+#include "memory/MObjects.h"
+#include "memory/MemoryProvider.h"
 
 enum SupportFoot {
     LEFT_SUPPORT = 0,
@@ -44,12 +49,6 @@ enum SupportFoot {
 };
 
 class Sensors;
-
-enum SensorsEvent {
-    NEW_MOTION_SENSORS = 1,
-    NEW_VISION_SENSORS,
-    NEW_IMAGE
-};
 
 struct FSR {
     FSR()
@@ -100,10 +99,16 @@ struct Inertial {
 };
 
 
-class Sensors : public Provider<SensorsEvent>{
+class Sensors {
     //friend class Man;
+    typedef man::memory::MemoryProvider<man::memory::MVisionSensors, Sensors> VisionSensorsProvider;
+    typedef man::memory::MemoryProvider<man::memory::MMotionSensors, Sensors> MotionSensorsProvider;
+    ADD_SHARED_PTR(Sensors)
+
 public:
-    Sensors(boost::shared_ptr<Speech> s);
+    Sensors(boost::shared_ptr<Speech> s,
+            man::memory::MVisionSensors::ptr mVisionSensors = man::memory::MVisionSensors::ptr(),
+            man::memory::MMotionSensors::ptr mMotionSensors = man::memory::MMotionSensors::ptr());
     virtual ~Sensors();
 
     // Locking data retrieval methods
@@ -176,6 +181,9 @@ public:
                           const float batteryCharge,
                           const float batteryCurrent);
 
+    void setBatteryCharge(float charge);
+    void setBatteryCurrent(float charge);
+
     // special methods
     //   the image retrieval and locking methods are a little different, as we
     //   don't copy the raw image data.  If locking is needed for some period
@@ -189,16 +197,15 @@ public:
     //   its own, and there is no way, even with locking, to guarantee that the
     //   underlying data at the image pointer location is not modified while
     //   the image is locked in Sensors.
-    const uint8_t* getNaoImage() const;
-    uint8_t* getWriteableNaoImage();
-    const uint16_t* getYImage() const;
-    const uint16_t* getImage() const;
-    const uint16_t* getUVImage() const;
-    const uint8_t* getColorImage() const;
-    void setNaoImagePointer(char* img);
-    void notifyNewNaoImage();
-    const man::memory::RoboImage* getRoboImage() const;
-    void setImage(const uint16_t* img);
+
+    man::corpus::Camera::Type which;
+
+    const uint16_t* getYImage(man::corpus::Camera::Type type) const;
+    const uint16_t* getImage(man::corpus::Camera::Type type) const;
+    const uint16_t* getUVImage(man::corpus::Camera::Type type) const;
+    const uint8_t* getColorImage(man::corpus::Camera::Type type) const;
+
+    void setImage(const uint16_t* img, man::corpus::Camera::Type type);
     void lockImage() const;
     void releaseImage() const;
 
@@ -206,7 +213,7 @@ public:
     // angles. This way we can save joints that are synchronized to the most
     // current image. At the same time, the bodyAngles vector will still have the
     // most recent angles if some other module needs them.
-    void updateVisionAngles();
+    void updateVisionAngles(int historyIndex);
 
     // Save a vision frame with associated sensor data
     void saveFrame();
@@ -216,7 +223,7 @@ public:
     void stopSavingFrames();
     bool isSavingFrames() const;
 
-    // writes data collected the variance monitor to ~/naoqi/log/
+    // writes data collected the variance monitor to ~/nbites/log/
     void writeVarianceData();
     // checks whether the sensors we're monitoring are "healthy" or not
     float percentBrokenFSR();
@@ -230,8 +237,6 @@ public:
     }
 
 private:
-    void add_to_module();
-
     // put the sensor data values into the variance tracker, at the correct hz
     void updateMotionDataVariance();
     void updateVisionDataVariance();
@@ -263,6 +268,9 @@ private:
     // angles. visionBodyAngles is a snapshot of what the most current angles
     // were when the last vision frame started.
     std::vector<float> bodyAngles;
+
+    typedef std::list< std::vector<float> > AngleHistory;
+    AngleHistory bodyAngleHistory;
     std::vector<float> visionBodyAngles;
     std::vector<float> motionBodyAngles;
     std::vector<float> bodyAnglesError;
@@ -280,15 +288,20 @@ private:
     float ultraSoundDistanceLeft;
     float ultraSoundDistanceRight;
 
-    const uint16_t *yImage, *uvImage;
-    const uint8_t *colorImage;
-    uint8_t *naoImage;
-    man::memory::RoboImage roboImage;
+    const uint16_t *yBottomImage, *uvBottomImage;
+    const uint16_t *yTopImage, *uvTopImage;
+    const uint8_t *colorBottomImage, *colorTopImage;
 
     // Pose needs to know which foot is on the ground during a vision frame
     // If both are on the ground (DOUBLE_SUPPORT_MODE/not walking), we assume
     // left foot is on the ground.
     SupportFoot supportFoot;
+
+    // Memory updating
+    VisionSensorsProvider visionSensorsProvider;
+    void updateVisionSensorsInMemory(man::memory::MVisionSensors::ptr) const;
+    MotionSensorsProvider motionSensorsProvider;
+    void updateMotionSensorsInMemory(man::memory::MMotionSensors::ptr) const;
 
     /**
      * Stuff below is not logged to vision frames or sent over the network to

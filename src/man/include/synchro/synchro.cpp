@@ -25,8 +25,8 @@
 #include <boost/shared_ptr.hpp>
 #include "synchro.h"
 #include "corpusconfig.h"
+
 using namespace std;
-using namespace boost;
 
 #include "NullStream.h"
 
@@ -39,13 +39,13 @@ using namespace boost;
 Event::Event (string _name)
   : name(_name), signalled(false)
 {
-    mutex = shared_ptr<pthread_mutex_t>(new pthread_mutex_t(), MutexDeleter());
+    mutex = boost::shared_ptr<pthread_mutex_t>(new pthread_mutex_t(), MutexDeleter());
 
     pthread_mutex_init(mutex.get(), NULL);
     pthread_cond_init(&cond, NULL);
 }
 
-Event::Event (string _name, shared_ptr<pthread_mutex_t> _mutex)
+Event::Event (string _name, boost::shared_ptr<pthread_mutex_t> _mutex)
   : name(_name), mutex(_mutex), signalled(false)
 {
     pthread_cond_init(&cond, NULL);
@@ -86,28 +86,28 @@ Synchro::~Synchro ()
 {
 }
 
-shared_ptr<Event> Synchro::create (string name)
+boost::shared_ptr<Event> Synchro::create (string name)
 {
-    map<string, shared_ptr<Event> >::iterator itr = events.find(name);
+    map<string, boost::shared_ptr<Event> >::iterator itr = events.find(name);
     if (itr == events.end()) {
-        const shared_ptr<Event> e(new Event(name));
+        const boost::shared_ptr<Event> e(new Event(name));
         events[name] = e;
     }
     return events[name];
 }
 
-shared_ptr<Event>
-Synchro::create (string name, shared_ptr<pthread_mutex_t> mutex)
+boost::shared_ptr<Event>
+Synchro::create (string name, boost::shared_ptr<pthread_mutex_t> mutex)
 {
-    map<string, shared_ptr<Event> >::iterator itr = events.find(name);
+    map<string, boost::shared_ptr<Event> >::iterator itr = events.find(name);
     if (itr == events.end()) {
-        const shared_ptr<Event> e(new Event(name, mutex));
+        const boost::shared_ptr<Event> e(new Event(name, mutex));
         events[name] = e;
     }
     return events[name];
 }
 
-const map<string, shared_ptr<Event> >& Synchro::available ()
+const map<string, boost::shared_ptr<Event> >& Synchro::available ()
 {
     return events;
 }
@@ -163,7 +163,9 @@ int Thread::start ()
 void Thread::stop ()
 {
     running = false;
-
+    //thread might be waiting for a signal, so if we're just waiting
+    //for it to stop, then we might wait forever
+    this->signalToResume();
     debug_thread_out << this->name << "::stopping" << endl;
 }
 
@@ -183,6 +185,7 @@ void* Thread::runThread (void* _this)
 
     debug_thread_out << this_instance->name << "::exiting" << endl;
     pthread_exit(NULL);
+    return _this;
 }
 
 void Thread::signalToResume() {
@@ -198,7 +201,7 @@ void Thread::waitForThreadToFinish() {
 }
 
 Trigger::Trigger (string name, bool _v)
-  : mutex(shared_ptr<pthread_mutex_t>(new pthread_mutex_t(), MutexDeleter())),
+  : mutex(boost::shared_ptr<pthread_mutex_t>(new pthread_mutex_t(), MutexDeleter())),
     on_event(name + TRIGGER_ON_SUFFIX, mutex),
     off_event(name + TRIGGER_OFF_SUFFIX, mutex),
     flip_event(name + TRIGGER_FLIP_SUFFIX, mutex),

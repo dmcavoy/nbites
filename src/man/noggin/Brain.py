@@ -37,6 +37,7 @@ from .kickDecider import KickDecider
 
 import _roboguardian
 import _speech
+import _localization
 
 from objects import (MyInfo, FieldObject, Ball)
 
@@ -128,6 +129,7 @@ class Brain(object):
         """
         # Build instances of the vision based field objects
         # Left post is on that goalie's left
+        # Note: As of 6/8/12, ygrp holds info about ambiguous posts
         # Yellow goal left and right posts
         self.yglp = FieldObject(self.vision.yglp,
                                 Constants.vis_landmark.VISION_YGLP,
@@ -237,9 +239,6 @@ class Brain(object):
         # Update objects
         self.updateObjects()
 
-        #Set LEDS
-        self.leds.processLeds()
-
         # Behavior stuff
         self.gameController.run()
         self.fallController.run()
@@ -247,6 +246,9 @@ class Brain(object):
         self.player.run()
         self.tracker.run()
         self.nav.run()
+
+        #Set LEDS
+        self.leds.processLeds()
 
         # Broadcast Report for Teammates
         self.setPacketData()
@@ -301,8 +303,9 @@ class Brain(object):
                           loc.ballY,
                           loc.ballXUncert,
                           loc.ballYUncert,
-                          self.ball.dist,
-                          self.ball.bearing,
+                          self.ball.loc.dist,
+                          self.ball.loc.bearing,
+                          self.ball.vis.on,
                           self.play.role,
                           self.play.subRole,
                           self.playbook.pb.me.chaseTime,
@@ -324,8 +327,9 @@ class Brain(object):
                                     loc.ballY,
                                     loc.ballXUncert,
                                     loc.ballYUncert,
-                                    self.ball.dist,
-                                    self.ball.bearing,
+                                    self.ball.loc.dist,
+                                    self.ball.loc.bearing,
+                                    self.ball.vis.on,
                                     self.play.role,
                                     self.play.subRole,
                                     self.playbook.pb.me.chaseTime,
@@ -333,23 +337,101 @@ class Brain(object):
                                     loc.ballVelY))
             self.out.logSComm(packet)
 
-    def resetLocalization(self):
+    # TODO: Take this out once new comm is in...
+    def activeTeamMates(self):
+        activeMates = 0
+        for i in xrange(Constants.NUM_PLAYERS_PER_TEAM):
+            mate = self.teamMembers[i]
+            if mate.active:
+                activeMates += 1
+        return activeMates
+
+    def resetInitialLocalization(self):
         """
-        Reset our localization
+        Reset loc according to team number and team color.
+        Note: Loc uses truly global coordinates.
         """
-        if self.out.loggingLoc:
-            self.out.stopLocLog()
-            self.out.startLocLog()
-        self.loc.reset()
+        if self.my.teamColor == Constants.teamColor.TEAM_BLUE:
+            if self.my.playerNumber == 1:
+                self.loc.resetLocTo(Constants.BLUE_GOALBOX_RIGHT_X,
+                                    Constants.FIELD_WHITE_BOTTOM_SIDELINE_Y,
+                                    Constants.HEADING_UP,
+                                    _localization.LocNormalParams(15.0, 15.0, 1.0))
+            elif self.my.playerNumber == 2:
+                self.loc.resetLocTo(Constants.BLUE_GOALBOX_RIGHT_X,
+                                    Constants.FIELD_WHITE_TOP_SIDELINE_Y,
+                                    Constants.HEADING_DOWN,
+                                    _localization.LocNormalParams(15.0, 15.0, 1.0))
+            elif self.my.playerNumber == 3:
+                self.loc.resetLocTo(Constants.LANDMARK_BLUE_GOAL_CROSS_X,
+                                    Constants.FIELD_WHITE_TOP_SIDELINE_Y,
+                                    Constants.HEADING_DOWN,
+                                    _localization.LocNormalParams(15.0, 15.0, 1.0))
+            elif self.my.playerNumber == 4:
+                self.loc.resetLocTo(Constants.LANDMARK_BLUE_GOAL_CROSS_X,
+                                    Constants.FIELD_WHITE_BOTTOM_SIDELINE_Y,
+                                    Constants.HEADING_UP,
+                                    _localization.LocNormalParams(15.0, 15.0, 1.0))
+        else:
+            if self.my.playerNumber == 1:
+                self.loc.resetLocTo(Constants.YELLOW_GOALBOX_LEFT_X,
+                                    Constants.FIELD_WHITE_TOP_SIDELINE_Y,
+                                    Constants.HEADING_DOWN,
+                                    _localization.LocNormalParams(15.0, 15.0, 1.0))
+            elif self.my.playerNumber == 2:
+                self.loc.resetLocTo(Constants.YELLOW_GOALBOX_LEFT_X,
+                                    Constants.FIELD_WHITE_BOTTOM_SIDELINE_Y,
+                                    Constants.HEADING_UP,
+                                    _localization.LocNormalParams(15.0, 15.0, 1.0))
+            elif self.my.playerNumber == 3:
+                self.loc.resetLocTo(Constants.LANDMARK_YELLOW_GOAL_CROSS_X,
+                                    Constants.FIELD_WHITE_BOTTOM_SIDELINE_Y,
+                                    Constants.HEADING_UP,
+                                    _localization.LocNormalParams(15.0, 15.0, 1.0))
+            elif self.my.playerNumber == 4:
+                self.loc.resetLocTo(Constants.LANDMARK_YELLOW_GOAL_CROSS_X,
+                                    Constants.FIELD_WHITE_TOP_SIDELINE_Y,
+                                    Constants.HEADING_DOWN,
+                                    _localization.LocNormalParams(15.0, 15.0, 1.0))
+
+    def resetLocalizationFromPenalty(self):
+        """
+        Resets localization to both possible locations, depending on team color.
+        """
+        if self.my.teamColor == Constants.teamColor.TEAM_BLUE:
+            self.loc.resetLocTo(Constants.LANDMARK_BLUE_GOAL_CROSS_X,
+                                Constants.FIELD_WHITE_BOTTOM_SIDELINE_Y,
+                                Constants.HEADING_UP,
+                                Constants.LANDMARK_BLUE_GOAL_CROSS_X,
+                                Constants.FIELD_WHITE_TOP_SIDELINE_Y,
+                                Constants.HEADING_DOWN,
+                                _localization.LocNormalParams(15.0, 15.0, 1.0),
+                                _localization.LocNormalParams(15.0, 15.0, 1.0))
+        else:
+            self.loc.resetLocTo(Constants.LANDMARK_YELLOW_GOAL_CROSS_X,
+                                Constants.FIELD_WHITE_BOTTOM_SIDELINE_Y,
+                                Constants.HEADING_UP,
+                                Constants.LANDMARK_YELLOW_GOAL_CROSS_X,
+                                Constants.FIELD_WHITE_TOP_SIDELINE_Y,
+                                Constants.HEADING_DOWN,
+                                _localization.LocNormalParams(15.0, 15.0, 1.0),
+                                _localization.LocNormalParams(15.0, 15.0, 1.0))
 
     def resetGoalieLocalization(self):
         """
-        Reset our localization
+        Resets the goalie's localization to the manual position in the goalbox.
         """
-        if self.out.loggingLoc:
-            self.out.stopLocLog()
-            self.out.startLocLog()
         if self.my.teamColor == Constants.teamColor.TEAM_BLUE:
-            self.loc.blueGoalieReset()
+            self.loc.resetLocTo(Constants.FIELD_WHITE_LEFT_SIDELINE_X,
+                                Constants.MIDFIELD_Y,
+                                Constants.HEADING_RIGHT,
+                                _localization.LocNormalParams(15.0, 15.0, 1.0))
         else:
-            self.loc.redGoalieReset()
+            self.loc.resetLocTo(Constants.FIELD_WHITE_RIGHT_SIDELINE_X,
+                                Constants.MIDFIELD_Y,
+                                Constants.HEADING_LEFT,
+                                _localization.LocNormalParams(15.0, 15.0, 1.0))
+
+    #TODO: write this method!
+    def resetPenaltyKickLocalization(self):
+        pass

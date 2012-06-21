@@ -411,7 +411,7 @@ PyMODINIT_FUNC init_comm (void)
 /**************************/
 
 // Constructor
-Comm::Comm (shared_ptr<Sensors> s, shared_ptr<Vision> v)
+Comm::Comm (boost::shared_ptr<Sensors> s, boost::shared_ptr<Vision> v)
     : Thread("Comm"), data(NUM_PACKET_DATA_ELEMENTS,0),
       lastPacketNumber(0),  latest(), sensors(s),
       timer(&monotonic_micro_time), gc(new GameController()),
@@ -422,6 +422,11 @@ Comm::Comm (shared_ptr<Sensors> s, shared_ptr<Vision> v)
     // initialize broadcast address structure
     broadcast_addr.sin_family = AF_INET;
     broadcast_addr.sin_port = htons(UDP_PORT);
+
+    struct in_addr addr;
+    inet_aton("192.168.255.255", &addr);
+    broadcast_addr.sin_addr = addr;
+
     broadcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
     // initialize gc broadcast address structure
     gc_broadcast_addr.sin_family = AF_INET;
@@ -465,7 +470,8 @@ void Comm::run()
 	{
         PROF_ENTER(P_COMM);
 	    if(timer.timeToSend())
-		send();
+			for (int burst = 0; burst < 3; ++burst)
+				send();
 
 	    monitor.performHealthCheck();
 
@@ -530,7 +536,7 @@ void Comm::discover_broadcast()
 {
     // run ifconfig command to discover broadcast address
     FILE *f = popen(
-		"ifconfig | grep 'Bcast' | sed -e 's/.* Bcast:\\([^ ]*\\) .*/\\1/'",
+		"/sbin/ifconfig | grep 'Bcast' | sed -e 's/.* Bcast:\\([^ ]*\\) .*/\\1/'",
         "r");
     if (f == NULL)
         return error(SOCKET_ERROR(errno));
@@ -1057,8 +1063,8 @@ std::string Comm::getRobotName()
     return name;
 }
 
-void Comm::setLocalizationAccess(shared_ptr<LocSystem> _loc,
-                                 shared_ptr<BallEKF> _ballEKF)
+void Comm::setLocalizationAccess(boost::shared_ptr<LocSystem> _loc,
+                                 boost::shared_ptr<BallEKF> _ballEKF)
 {
     tool.setLocalizationAccess(_loc, _ballEKF);
 }
