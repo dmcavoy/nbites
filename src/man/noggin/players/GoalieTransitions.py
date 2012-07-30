@@ -74,6 +74,8 @@ def noCorner(player):
 def ballMoreImportant(player):
     """
     Goalie needs to chase, not localize itself.
+    Dani: We could use heat here.. we probably dont want to chase if
+    heat is really high because they might be shooting?
     """
     if player.brain.ball.vis.on and player.brain.ball.vis.dist < 100.0:
         return True
